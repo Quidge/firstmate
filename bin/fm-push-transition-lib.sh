@@ -41,6 +41,34 @@ wake() {
   exit 0
 }
 
+# Non-fatal, bounded-retry enqueue for the watcher triage paths. A transient
+# enqueue failure - wake-queue lock contention while a turn drains the queue, a
+# brief filesystem hiccup, or a racing second watcher - must not tear supervision
+# down. The poll loop is the permanent fail-closed backstop: on a non-zero return
+# here the caller SKIPS advancing its suppression marker, so the same wake is
+# re-detected and re-enqueued on the next cycle. That keeps a recoverable
+# contention blip from becoming a supervision-killing exit, while genuinely
+# unrecoverable states still fail closed. Returns 0 when the wake is durably
+# queued and 1 when the caller should skip advancing its marker and retry next
+# cycle. An invalid wake kind is a code defect, not contention, so it fails
+# closed loudly rather than spinning.
+wake_enqueue() {  # <kind> <key> <payload>
+  local rc
+  fm_wake_append_resilient "$@"
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    2)
+      echo "watcher: refusing to continue - invalid wake kind '$1'" >&2
+      exit 1
+      ;;
+    *)
+      triage_log "wake enqueue deferred (kind=$1 key=$2): transient failure, supervision kept alive, retrying next cycle"
+      return 1
+      ;;
+  esac
+}
+
 _hb_surfaced_path() {
   printf '%s/.hb-surfaced-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
 }
@@ -69,8 +97,12 @@ handle_push_transition() {  # <backend> <session> <record>
     return
   fi
   reason="stale: $window (herdr: agent $to - waiting on human, escalated immediately, not via wedge timer)"
-  fm_wake_append stale "$window" "$reason" || exit 1
-  fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
-  mark_surfaced "$STATE/$task.status"
-  wake "$reason"
+  # A deferred enqueue leaves the transition uncommitted so the next event cycle
+  # re-delivers and retries it, instead of committing (consuming) an edge whose
+  # wake never reached the queue.
+  if wake_enqueue stale "$window" "$reason"; then
+    fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
+    mark_surfaced "$STATE/$task.status"
+    wake "$reason"
+  fi
 }

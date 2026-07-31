@@ -30,17 +30,25 @@
 #                                                          this arm attaches and follows it
 #   watcher: FAILED - no live watcher with a fresh beacon  - could not confirm one
 #   watcher: FAILED - cycle ended without an actionable reason
-#                                                        - a clean cycle ended with no wake and no
-#                                                          verified healthy successor
+#                                                        - an arm that OWNED the singleton ended
+#                                                          its cycle with no wake and no verified
+#                                                          healthy successor
+#   watcher: stood down (benign concurrent re-arm; ...)   - an arm that only ever ATTACHED to a
+#                                                          peer (never owned the singleton) whose
+#                                                          peer has ended: a redundant duplicate
+#                                                          stands down cleanly (exit 0), not FAILED
 # It NEVER reports started/attached/healthy off a stale beacon or a dead/reused pid: a
 # stale-beacon or dead-pid holder either self-heals (the fresh child steals the
 # dead lock per the singleton self-eviction/steal path and is confirmed) or this
 # returns the FAILED line. On started it waits the child and propagates the wake
-# reason; on attached it stays live across identity-matched successors. An
-# attached cycle that ends without a healthy successor is a typed nonzero failure,
-# never a clean empty completion. On FAILED it exits non-zero so the failure is
-# loud. A live cycle already present means re-arm attaches - do not start a second
-# watcher.
+# reason; on attached it stays live across identity-matched successors. When an
+# attached cycle ends without a healthy successor the outcome depends on
+# ownership: an arm that owned the singleton fails loudly (typed nonzero,
+# never a clean empty completion), while a benign concurrent re-arm that only
+# attached to a live peer stands down cleanly and leaves continuity to that
+# peer's owner (Quidge/firstmate#2). On FAILED it exits non-zero so the failure
+# is loud. A live cycle already present means re-arm attaches - do not start a
+# second watcher.
 #
 # Every observed watcher cycle appends one tab-separated lifecycle record to
 # state/.watch-cycle-exits.log. The arm layer owns that bounded ledger; it records
@@ -104,6 +112,12 @@ cycle_watcher_pid=none
 cycle_origin=unknown
 cycle_started_at=0
 cycle_lock_before='pid:none|identity:none'
+# 1 once this arm's own started child is confirmed as the healthy singleton. An
+# arm that only ever attached to someone else's watcher keeps this at 0, so
+# attach_and_wait stands it down benignly - not FAILED - when that peer ends: a
+# redundant duplicate from a concurrent re-arm is not the supervision owner. See
+# Quidge/firstmate#2.
+arm_owned_singleton=0
 
 cycle_begin() {
   cycle_watcher_pid=$1
@@ -261,6 +275,17 @@ fail_unexplained_cycle() {
   return 1
 }
 
+# A benign stand-down for an arm that only ever attached to a peer (never owned
+# the singleton) whose cycle has now ended. This is not a failure: the peer's
+# owner arm (or, for a Claude primary, the next Stop auto-arm) owns continuity,
+# and the drain-time and turn-end liveness guards independently re-alarm if
+# supervision is genuinely down. It is deliberately NOT a "watcher: FAILED" line
+# so an adapter never mistakes a benign concurrent re-arm for a supervision-off
+# event and starts the racy re-arm loop that fuels the very races it reports.
+report_benign_standdown() {
+  echo "watcher: stood down (benign concurrent re-arm; attached peer ended, its owner holds continuity)"
+}
+
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
 # to a verified successor. With no successor, fail loudly instead of returning a
 # clean empty completion that an adapter could mistake for a no-op.
@@ -285,8 +310,12 @@ attach_and_wait() {
       continue
     fi
     cycle_log_append unknown unknown attached-cycle-ended none
-    fail_unexplained_cycle
-    return 1
+    if [ "$arm_owned_singleton" -eq 1 ]; then
+      fail_unexplained_cycle
+      return 1
+    fi
+    report_benign_standdown
+    return 0
   done
 }
 
@@ -463,6 +492,7 @@ deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
 while :; do
   if healthy_watcher; then
     if [ "$HEALTHY_PID" = "$child" ]; then
+      arm_owned_singleton=1
       cycle_refresh_lock_before
       cycle_mark_predecessor_successor "started:$child"
       echo "watcher: started pid=$child (beacon fresh)"
