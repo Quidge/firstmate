@@ -429,8 +429,79 @@ test_interruption_before_and_after_raw_commit() {
   pass "interruptions restore before commitment and never replay after raw commitment"
 }
 
+# fm_wake_append_resilient is the bounded-retry wrapper the watcher uses so a
+# transient enqueue failure under contention (Quidge/firstmate#2) does not become
+# a supervision-killing exit. It retries only the recoverable write failure (rc
+# 1); an invalid wake kind (rc 2) is a code defect returned immediately. These
+# exercise it through its interface with a stubbed fm_wake_append.
+test_resilient_append_invalid_kind_is_fatal_without_retry() {
+  local dir state out
+  dir=$(make_case resilient-invalid-kind)
+  state="$dir/state"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    n=0
+    fm_wake_append() { n=$((n + 1)); return 2; }
+    FM_WAKE_APPEND_RETRIES=5 FM_WAKE_APPEND_RETRY_SLEEP=0 fm_wake_append_resilient bogus k p
+    printf "rc=%s calls=%s\n" "$?" "$n"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" 2>/dev/null)
+  [ "$out" = "rc=2 calls=1" ] || fail "invalid kind must return rc 2 without retry, got: $out"
+  pass "fm_wake_append_resilient returns rc 2 immediately for an invalid kind (no retry)"
+}
+
+test_resilient_append_retries_transient_then_succeeds() {
+  local dir state out
+  dir=$(make_case resilient-transient)
+  state="$dir/state"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    n=0
+    fm_wake_append() { n=$((n + 1)); [ "$n" -lt 3 ] && return 1; return 0; }
+    FM_WAKE_APPEND_RETRIES=5 FM_WAKE_APPEND_RETRY_SLEEP=0 fm_wake_append_resilient signal k p
+    printf "rc=%s calls=%s\n" "$?" "$n"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" 2>/dev/null)
+  [ "$out" = "rc=0 calls=3" ] || fail "a transient failure must be retried until success, got: $out"
+  pass "fm_wake_append_resilient retries a transient failure and returns 0 on success"
+}
+
+test_resilient_append_gives_up_bounded_on_persistent_failure() {
+  local dir state out
+  dir=$(make_case resilient-persistent)
+  state="$dir/state"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    n=0
+    fm_wake_append() { n=$((n + 1)); return 1; }
+    FM_WAKE_APPEND_RETRIES=4 FM_WAKE_APPEND_RETRY_SLEEP=0 fm_wake_append_resilient check k p
+    printf "rc=%s calls=%s\n" "$?" "$n"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" 2>/dev/null)
+  [ "$out" = "rc=1 calls=4" ] || fail "a persistent failure must give up after the bounded retries and return non-zero, got: $out"
+  pass "fm_wake_append_resilient gives up after bounded retries (non-fatal) on a persistent failure"
+}
+
+test_resilient_append_real_write_failure_is_bounded_not_fatal() {
+  local dir state out
+  dir=$(make_case resilient-real-write)
+  state="$dir/state"
+  # A real (unstubbed) enqueue whose queue path has a missing parent dir fails to
+  # append; the wrapper must retry the bounded number of times and return
+  # non-zero rather than hanging or aborting.
+  out=$(FM_STATE_OVERRIDE="$state" FM_WAKE_QUEUE="$state/absent-dir/.wake-queue" bash -c '
+    . "$1"
+    FM_WAKE_APPEND_RETRIES=3 FM_WAKE_APPEND_RETRY_SLEEP=0 fm_wake_append_resilient signal k "signal: real failure"
+    printf "rc=%s\n" "$?"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" 2>/dev/null)
+  [ "$out" = "rc=1" ] || fail "a real write failure must return non-zero after bounded retries, got: $out"
+  [ ! -e "$state/absent-dir/.wake-queue" ] || fail "the wrapper must not have created the queue under a missing parent"
+  pass "fm_wake_append_resilient bounds retries and returns non-zero on a real (unstubbed) write failure"
+}
+
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_watcher
+test_resilient_append_invalid_kind_is_fatal_without_retry
+test_resilient_append_retries_transient_then_succeeds
+test_resilient_append_gives_up_bounded_on_persistent_failure
+test_resilient_append_real_write_failure_is_bounded_not_fatal
 test_stale_enqueue_before_suppressor
 test_not_working_stale_enqueue_before_suppressor
 test_check_output_is_queued

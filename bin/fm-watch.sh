@@ -290,14 +290,18 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       age=$(( $(date +%s) - since ))
       if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
-        echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
-        fm_wake_append stale "$win" "$reason" || exit 1
-        rm -f "$since_file"
-        wake "$reason"
+        # Persist the incremented escalation count and clear the timer only after
+        # the wake is durably queued, so a deferred enqueue re-escalates from the
+        # same count on the next cycle rather than inflating it.
+        if wake_enqueue stale "$win" "$reason"; then
+          echo "$n" > "$escalation_file"
+          rm -f "$since_file"
+          wake "$reason"
+        fi
       fi
       ;;
   esac
@@ -341,9 +345,10 @@ handle_paused_stale() {  # <window> <task> <hash>
   rf_age=$(age_of "$rf")   # 999999 when no prior re-surface
   if [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] && [ "$rf_age" -ge "$PAUSE_RESURFACE_SECS" ]; then
     reason="stale: $win (paused ${age}s, awaiting external - declared pause, rechecked on a long cadence not a wedge; confirm the wait still holds)"
-    fm_wake_append stale "$win" "$reason" || exit 1
-    date +%s > "$rf"
-    wake "$reason"
+    if wake_enqueue stale "$win" "$reason"; then
+      date +%s > "$rf"
+      wake "$reason"
+    fi
   fi
   triage_log "absorbed stale (paused, awaiting external, age ${age}s): $win"
 }
@@ -417,7 +422,9 @@ pause_state_class() {  # <window> <task>
 surface_nonterminal_stale() {  # <window> <hash>
   local win=$1 h=$2 key task last
   key=$(printf '%s' "$win" | tr ':/.' '___')
-  fm_wake_append stale "$win" "stale: $win" || exit 1
+  # A deferred enqueue returns without advancing the .stale-* suppressor, so the
+  # same stale hash is re-detected and retried on the next poll.
+  wake_enqueue stale "$win" "stale: $win" || return 0
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key"
   task=$(window_to_task "$win" "$STATE")
@@ -709,9 +716,12 @@ fm_pid_identity "$WATCHER_PID" > "$WATCH_LOCK/pid-identity" 2>/dev/null || true
 # Finish only identity-bound retirement receipts before any check can run.
 if ! fm_pr_poll_retirement_recover_all "$STATE" "$SCRIPT_DIR/fm-pr-poll.sh"; then
   reason="check: rejected unauthenticated PR poll retirement receipts:$FM_PR_POLL_RETIREMENT_REJECTED"
-  fm_wake_append check pr-poll-retirement "$reason" || exit 1
-  touch "$STATE/.last-check"
-  wake "$reason"
+  # A deferred enqueue leaves the preserved receipts on disk; the next watcher
+  # start re-runs this recovery and re-surfaces them, so the loop can proceed.
+  if wake_enqueue check pr-poll-retirement "$reason"; then
+    touch "$STATE/.last-check"
+    wake "$reason"
+  fi
 fi
 
 while :; do
@@ -781,24 +791,29 @@ while :; do
       fi
       if [ -n "$out" ]; then
         reason="check: $c: $out"
-        fm_wake_append check "$c" "$reason" || exit 1
-        if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
-          if fm_pr_poll_retirement_publish "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" "$out"; then
-            fm_pr_poll_retirement_recover_one "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" \
-              || triage_log "merged PR poll retirement remains recoverable for $id"
-          else
-            triage_log "merged PR poll retirement deferred because its canonical snapshot changed for $id"
+        # A deferred enqueue skips consuming the result (no retirement publish, no
+        # cadence touch, no wake); the poll re-runs next interval and re-detects
+        # the still-true result rather than the watcher dying on the blip.
+        if wake_enqueue check "$c" "$reason"; then
+          if [ "$is_pr_poll" -eq 1 ] && [ "$out" = merged ]; then
+            if fm_pr_poll_retirement_publish "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" "$out"; then
+              fm_pr_poll_retirement_recover_one "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" \
+                || triage_log "merged PR poll retirement remains recoverable for $id"
+            else
+              triage_log "merged PR poll retirement deferred because its canonical snapshot changed for $id"
+            fi
           fi
+          touch "$STATE/.last-check"
+          wake "$reason"
         fi
-        touch "$STATE/.last-check"
-        wake "$reason"
       fi
     done
     if [ -n "$rejected_checks" ]; then
       reason="check: rejected unauthenticated state checks:$rejected_checks"
-      fm_wake_append check unauthenticated-state-checks "$reason" || exit 1
-      touch "$STATE/.last-check"
-      wake "$reason"
+      if wake_enqueue check unauthenticated-state-checks "$reason"; then
+        touch "$STATE/.last-check"
+        wake "$reason"
+      fi
     fi
     touch "$STATE/.last-check"
   fi
@@ -835,20 +850,27 @@ EOF
     # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
     if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+      # Enqueue the whole pending set first; advance the .seen-* suppressors only
+      # if every enqueue succeeded, so a deferred enqueue for any one file leaves
+      # the entire set unmarked and re-detected on the next poll (last-write-wins
+      # dedupe collapses any records that did land before the deferral).
+      signal_enqueue_ok=1
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
-        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        wake_enqueue signal "$(basename "$f")" "$reason" || { signal_enqueue_ok=0; break; }
       done <<EOF
 $pending
 EOF
-      while IFS=$(printf '\t') read -r sf sig f; do
-        [ -n "$sf" ] || continue
-        printf '%s' "$sig" > "$sf"
-        mark_surfaced "$f"
-      done <<EOF
+      if [ "$signal_enqueue_ok" -eq 1 ]; then
+        while IFS=$(printf '\t') read -r sf sig f; do
+          [ -n "$sf" ] || continue
+          printf '%s' "$sig" > "$sf"
+          mark_surfaced "$f"
+        done <<EOF
 $pending
 EOF
-      wake "$reason"
+        wake "$reason"
+      fi
     else
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
@@ -907,9 +929,10 @@ EOF
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            fm_wake_append stale "$w" "stale: $w" || exit 1
-            printf '%s' "$h" > "$sf"
-            wake "stale: $w"
+            if wake_enqueue stale "$w" "stale: $w"; then
+              printf '%s' "$h" > "$sf"
+              wake "stale: $w"
+            fi
           fi
         elif stale_is_terminal "$w" "$STATE"; then
           # The log's last line is captain-relevant - but that alone is not
@@ -932,11 +955,12 @@ EOF
               date +%s > "$ssf"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
-              fm_wake_append stale "$w" "stale: $w" || exit 1
-              printf '%s' "$h" > "$sf"
-              rm -f "$ssf"
-              mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
-              wake "stale: $w"
+              if wake_enqueue stale "$w" "stale: $w"; then
+                printf '%s' "$h" > "$sf"
+                rm -f "$ssf"
+                mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
+                wake "stale: $w"
+              fi
             fi
           elif [ -e "$ssf" ]; then
             # This exact hash was already overridden as provably-working (a
@@ -1043,17 +1067,20 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
     if afk_present; then
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
-      touch "$STATE/.last-heartbeat"
-      wake "heartbeat"
+      if wake_enqueue heartbeat heartbeat heartbeat; then
+        touch "$STATE/.last-heartbeat"
+        wake "heartbeat"
+      fi
     elif heartbeat_scan_finds_actionable; then
       # Backstop: a captain-relevant status the per-wake path absorbed by mistake.
       # Enqueue first, then mark every captain-relevant status surfaced so the next
-      # heartbeat does not re-fire them (enqueue-before-suppress preserved).
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
-      touch "$STATE/.last-heartbeat"
-      mark_all_captain_relevant_surfaced
-      wake "heartbeat"
+      # heartbeat does not re-fire them (enqueue-before-suppress preserved). A
+      # deferred enqueue leaves .last-heartbeat untouched so the scan retries.
+      if wake_enqueue heartbeat heartbeat heartbeat; then
+        touch "$STATE/.last-heartbeat"
+        mark_all_captain_relevant_surfaced
+        wake "heartbeat"
+      fi
     else
       touch "$STATE/.last-heartbeat"
       echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"

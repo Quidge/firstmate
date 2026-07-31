@@ -468,9 +468,14 @@ test_watch_restart_attaches_to_healthy_peer() {
   wait "$peer" 2>/dev/null || true
   wait_for_exit "$armpid" 80
   status=$?
-  [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "restart arm did not fail after its attached peer ended without a successor (status $status)"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$out" || fail "restart arm did not surface the attached cycle end"
-  pass "watch restart attaches to a verified healthy peer and later surfaces a successor gap"
+  # Regression for Quidge/firstmate#2: a benign concurrent re-arm that only
+  # attached to a verified live peer (it never owned the singleton) must NOT
+  # report FAILED when that peer ends - it stands down cleanly (exit 0) and
+  # leaves continuity to the peer's owner / the next auto-arm.
+  [ "$status" -eq 0 ] || fail "benign concurrent re-arm should stand down cleanly (exit 0) when its attached peer ends, got status $status"
+  ! grep -qF 'watcher: FAILED' "$out" || fail "a benign concurrent re-arm must not report FAILED when its attached peer ends: $(cat "$out")"
+  grep -qF 'watcher: stood down' "$out" || fail "the attach-only arm did not report the benign stand-down: $(cat "$out")"
+  pass "watch restart attaches to a verified live peer and stands down benignly when that peer later ends"
 }
 
 test_watcher_self_evicts_on_lock_takeover() {
@@ -565,14 +570,17 @@ test_arm_attaches_and_waits_for_live_fresh_watcher() {
   ! grep -qF 'watcher: FAILED' "$armout" || fail "arm reported FAILED for a healthy watcher"
   [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$wpid" ] || fail "arm disturbed the healthy watcher's lock"
   is_live_non_zombie "$armpid" || fail "arm exited while the seed watcher was still healthy"
-  # After the seed dies without a successor, the attached arm must fail loudly.
+  # After the seed dies without a successor, the attach-only arm (it never owned
+  # the singleton) stands down benignly instead of raising a false FAILED - see
+  # Quidge/firstmate#2.
   kill "$wpid" 2>/dev/null || true
   wait "$wpid" 2>/dev/null || true
   wait_for_exit "$armpid" 80
   status=$?
-  [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "attached arm did not fail after seed died (status $status)"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$armout" || fail "attached arm did not emit the typed cycle-end failure"
-  pass "arm attaches to a live fresh watcher and fails loudly when that cycle has no successor"
+  [ "$status" -eq 0 ] || fail "attach-only arm should stand down cleanly (exit 0) when the seed watcher ends, got status $status"
+  ! grep -qF 'watcher: FAILED' "$armout" || fail "an attach-only arm must not report FAILED when the watcher it attached to ends: $(cat "$armout")"
+  grep -qF 'watcher: stood down' "$armout" || fail "the attach-only arm did not report the benign stand-down: $(cat "$armout")"
+  pass "arm attaches to a live fresh watcher and stands down benignly when that cycle has no successor"
 }
 
 test_attached_arm_signal_is_recorded_in_cycle_ledger() {
@@ -753,14 +761,17 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
   grep -qF "watcher: attached pid=$peer" "$armout" || fail "arm did not wait for and attach to the peer watcher: $(cat "$armout")"
   ! grep -qF 'watcher: FAILED' "$armout" || fail "arm falsely reported FAILED during peer startup race"
   is_live_non_zombie "$armpid" || fail "arm exited while the peer was still healthy"
-  # After the peer dies without a successor, the attached arm must fail loudly.
+  # After the peer dies without a successor, the attach-only arm stands down
+  # benignly instead of raising a false supervision-off FAILED - see
+  # Quidge/firstmate#2.
   kill "$peer" 2>/dev/null || true
   wait "$peer" 2>/dev/null || true
   wait_for_exit "$armpid" 80
   status=$?
-  [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "attached arm did not fail after peer died (status $status): $(cat "$armout")"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$armout" || fail "peer-attached arm did not emit the typed cycle-end failure"
-  pass "arm attaches to a peer watcher after child stands down and surfaces a missing successor"
+  [ "$status" -eq 0 ] || fail "peer-attached arm should stand down cleanly (exit 0) when the peer ends, got status $status: $(cat "$armout")"
+  ! grep -qF 'watcher: FAILED' "$armout" || fail "peer-attached arm must not report FAILED when its peer ends: $(cat "$armout")"
+  grep -qF 'watcher: stood down' "$armout" || fail "peer-attached arm did not report the benign stand-down: $(cat "$armout")"
+  pass "arm attaches to a peer watcher after child stands down and stands down benignly when the peer ends"
 }
 
 test_arm_fails_loud_when_no_fresh_watcher_confirmable() {
@@ -1011,6 +1022,54 @@ test_msys_pid_identity_uses_proc() {
   pass "MSYS process identity uses compatible /proc fields"
 }
 
+# Focused regression for Quidge/firstmate#2: the incident sequence. A live
+# watcher owns the singleton; a concurrent --restart's started child self-evicts
+# behind that live peer and attaches to it. When the peer then ends without a
+# successor, the concurrent arm - which never owned the singleton - must stand
+# down benignly (exit 0, no FAILED line) instead of raising a spurious
+# supervision-off alarm that drove the operator into more racy re-arming.
+test_concurrent_restart_attach_stands_down_not_failed() {
+  local dir state fakebin out wpid armout armpid status i
+  dir=$(make_case concurrent-restart-benign)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  mark_pr_check_migration_complete "$state"
+  # A genuinely live watcher already owns the singleton.
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  wpid=$!
+  i=0
+  while [ "$i" -lt 60 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$wpid" ] && [ -e "$state/.last-watcher-beat" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$wpid" ] || fail "seed watcher did not take the singleton lock"
+  # A concurrent --restart: it cannot signal the live TERM-resistant... (here the
+  # seed is a real watcher) so its own started child self-evicts behind the live
+  # peer and it attaches to it.
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" > "$armout" &
+  armpid=$!
+  i=0
+  while [ "$i" -lt 80 ]; do
+    grep -qF "watcher: attached pid=$wpid" "$armout" 2>/dev/null && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -qF "watcher: attached pid=$wpid" "$armout" || fail "concurrent arm did not attach to the live peer: $(cat "$armout")"
+  ! grep -qF 'watcher: FAILED' "$armout" || fail "concurrent arm reported FAILED while the peer was healthy: $(cat "$armout")"
+  # The peer ends with no successor: the attach-only arm stands down benignly.
+  kill "$wpid" 2>/dev/null || true
+  wait "$wpid" 2>/dev/null || true
+  wait_for_exit "$armpid" 80
+  status=$?
+  [ "$status" -eq 0 ] || fail "benign concurrent re-arm must exit 0 when its attached peer ends, got status $status: $(cat "$armout")"
+  ! grep -qF 'watcher: FAILED' "$armout" || fail "benign concurrent re-arm must NOT report FAILED when its attached peer ends: $(cat "$armout")"
+  grep -qF 'watcher: stood down' "$armout" || fail "benign concurrent re-arm did not report the stand-down: $(cat "$armout")"
+  pass "a benign concurrent re-arm that attaches to a verified live peer stands down (not FAILED) when the peer ends"
+}
+
 test_singleton_start
 test_pid_identity_is_locale_invariant
 test_proc_pid_identity_ignores_wall_clock_and_detects_pid_reuse
@@ -1036,6 +1095,7 @@ test_arm_starts_and_self_heals
 test_arm_hup_cleans_child_and_temp_output
 test_arm_propagates_immediate_wake_before_confirmation
 test_arm_waits_for_peer_beacon_after_child_stands_down
+test_concurrent_restart_attach_stands_down_not_failed
 test_arm_fails_loud_when_no_fresh_watcher_confirmable
 test_cycle_exit_ledger_links_successor_and_stays_bounded
 test_stopped_watcher_is_live_but_stale_then_exit_is_classified
