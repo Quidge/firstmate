@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|unknown
+# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|unknown
 #        fm-harness.sh crew             print the effective CREWMATE harness
 #                                        (config/crew-harness; "default" resolves to own)
 #        fm-harness.sh secondmate       print the harness the PRIMARY uses to launch
@@ -54,6 +54,11 @@ detect_own() {
       *opencode*) echo opencode; return ;;
       *grok*) echo grok; return ;;
       kimi) echo kimi; return ;;
+      # cursor-agent's launcher execs node under `exec -a "$0"`, so the command
+      # name a crew ancestor exposes is the cursor-agent basename. No verified
+      # env marker is exported to child/tool processes (the wrapper sets
+      # CURSOR_INVOKED_AS only in its own process), so detection is ancestry-only.
+      *cursor-agent*) echo cursor; return ;;
       pi-signed) echo pi; return ;;
       pi) echo pi; return ;;
       node*|python*)
@@ -64,6 +69,7 @@ detect_own() {
           *codex*) echo codex; return ;;
           *opencode*) echo opencode; return ;;
           *grok*) echo grok; return ;;
+          *cursor-agent*) echo cursor; return ;;
           *" pi "*|*/pi) echo pi; return ;;
         esac ;;
     esac

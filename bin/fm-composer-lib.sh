@@ -185,14 +185,17 @@ fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [
   plain_content=${5:-$content}
   if [ "$bordered" != 1 ] && [ -z "$content" ] && [ -n "$plain_content" ]; then
     case "$plain_content" in
-      '❯'|'›') printf 'empty'; return 0 ;;
+      '❯'|'›'|'→') printf 'empty'; return 0 ;;
       *) printf 'unknown'; return 0 ;;
     esac
   fi
   # A bare prompt glyph on its own row.
   case "$content" in
-    '❯'|'›')
+    '❯'|'›'|'→')
       # Agent prompt glyph: a genuine empty agent composer, bordered or bare.
+      # `→` (U+2192) is cursor-agent's composer glyph, rendered dim (SGR 2) so
+      # fm_composer_strip_ghost normally removes it before this point; the arm
+      # keeps a surviving bare `→` from reading as a dead shell.
       printf 'empty'; return 0 ;;
     '>'|'$'|'%'|'#')
       # Shell prompt glyph: empty ONLY inside a composer box (the harness's own
@@ -208,8 +211,8 @@ fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [
   fi
   # Strip a leading prompt glyph, then re-judge the remainder.
   case "$content" in
-    '❯ '*|'› '*|'> '*|'$ '*|'% '*|'# '*) content=${content#??} ;;
-    '❯'*|'›'*|'>'*|'$'*|'%'*|'#'*) content=${content#?} ;;
+    '❯ '*|'› '*|'→ '*|'> '*|'$ '*|'% '*|'# '*) content=${content#??} ;;
+    '❯'*|'›'*|'→'*|'>'*|'$'*|'%'*|'#'*) content=${content#?} ;;
   esac
   content="${content#"${content%%[![:space:]]*}"}"
   content="${content%"${content##*[![:space:]]}"}"

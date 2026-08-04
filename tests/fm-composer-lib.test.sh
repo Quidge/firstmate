@@ -77,9 +77,15 @@ test_agent_glyphs_are_empty_bordered_and_bare() {
   local out
   out=$(classify 0 '❯'); [ "$out" = empty ] || fail "bare claude '❯' should read empty, got '$out'"
   out=$(classify 0 '›'); [ "$out" = empty ] || fail "bare codex '›' should read empty, got '$out'"
+  out=$(classify 0 '→'); [ "$out" = empty ] || fail "bare cursor '→' should read empty, got '$out'"
   out=$(classify 1 '❯'); [ "$out" = empty ] || fail "bordered claude '❯' should read empty, got '$out'"
   out=$(classify 1 '›'); [ "$out" = empty ] || fail "bordered codex '›' should read empty, got '$out'"
-  pass "fm_composer_classify_content: agent prompt glyphs (❯ claude, › codex) read empty bordered or bare"
+  out=$(classify 1 '→'); [ "$out" = empty ] || fail "bordered cursor '→' should read empty, got '$out'"
+  # The cursor glyph after a strip that emptied the content still reads empty.
+  out=$(classify 0 '' '' sensitive '→'); [ "$out" = empty ] || fail "a stripped cursor '→' should read empty, got '$out'"
+  # Real text after the cursor glyph is still pending.
+  out=$(classify 1 '→ deploy staging now'); [ "$out" = pending ] || fail "bordered '→ <text>' should be pending, got '$out'"
+  pass "fm_composer_classify_content: agent prompt glyphs (❯ claude, › codex, → cursor) read empty bordered or bare"
 }
 
 # --- Empty content and idle placeholder -------------------------------------

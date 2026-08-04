@@ -133,6 +133,10 @@
 # a firstmate-owned global hook and registry, and a gitignored per-task pointer.
 # grok uses a firstmate-owned global hook under ${GROK_HOME:-$HOME/.grok}/hooks
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
+# cursor uses firstmate-owned entries in $HOME/.cursor/hooks.json plus a global
+# registry, a gitignored .fm-cursor-turnend worktree pointer and a state token,
+# and a gitignored .cursor/cli.json that neutralizes commit/PR agent attribution
+# for that worktree only.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
 # A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
 # mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
@@ -376,7 +380,7 @@ spawn_remote_secondmate() {
     harness=$("$FM_ROOT/bin/fm-harness.sh" secondmate)
   fi
   case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi) ;;
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor) ;;
     *)
       fm_lock_release "$registry_lock" || true
       fm_lock_release "$SPAWN_TASK_LOCK" || true
@@ -783,7 +787,7 @@ FIRSTMATE_HOME=
 
 if [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-    ''|claude|codex|opencode|pi|pi-signed|grok|kimi)
+    ''|claude|codex|opencode|pi|pi-signed|grok|kimi|cursor)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
@@ -849,6 +853,16 @@ launch_template() {
     # Its turn-end signal is a globally configured Stop hook plus a guarded
     # per-task worktree token, so no launch placeholder belongs here.
     kimi) printf '%s' '__KIMIBIN__ __MODELFLAG__--auto' ;;
+    # cursor-agent (Cursor Composer): a positional prompt starts the supervised
+    # interactive TUI. --force auto-approves every tool execution (verified fully
+    # unattended) and --trust pre-trusts the fresh worktree so no post-launch
+    # keystroke is needed. There is NO effort flag (cursor encodes effort in the
+    # model id, not a separate flag), so no __EFFORTFLAG__ placeholder. Its
+    # turn-end and busy signals are native user hooks installed below, not part
+    # of the launch command. The template MUST end with cursor-agent as the
+    # shell's sole/last command (no trailing `;`) so the shell execs it and the
+    # pane reports `cursor-agent` for liveness (data/cursor-verify/report.md).
+    cursor) printf '%s' 'cursor-agent --force --trust __MODELFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     *) return 1 ;;
   esac
 }
@@ -961,7 +975,7 @@ model_flag_for_harness() {
   local harness=$1 model=$2
   [ -n "$model" ] && [ "$model" != default ] || return 0
   case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi)
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor)
       printf -- '--model %s ' "$(shell_quote "$model")"
       ;;
   esac
@@ -1020,6 +1034,17 @@ case "$LAUNCH" in
     fi
     ;;
 esac
+
+# cursor installs its firstmate-owned user hook (~/.cursor/hooks.json entries +
+# the guarded fm-cursor-turnend.sh script) before pane creation, so an unsafe or
+# surprising hooks.json refuses the spawn rather than launching an unmonitored
+# worker. The install is idempotent and preserves the captain's own cursor hooks.
+if [ "$HARNESS" = cursor ] && [ "$KIND" != secondmate ]; then
+  "$FM_ROOT/bin/fm-cursor-turnend-hook.sh" install || {
+    echo "error: refusing cursor spawn because the global turn-end hook could not be installed safely" >&2
+    exit 1
+  }
+fi
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -1789,6 +1814,18 @@ if [ "$KIND" != secondmate ]; then
         exit 1
       }
       ;;
+    cursor*)
+      # cursor has a live-verified semantic source (its beforeSubmitPrompt/stop
+      # user hooks), so it arms the busy contract like the other verified
+      # adapters. The gate stays consulted so a future close of it (a broken
+      # installed version) would fall back to unknown rather than a stale busy.
+      if fm_busy_cursor_verified; then
+        BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
+          echo "error: failed to arm the busy-state contract for $ID" >&2
+          exit 1
+        }
+      fi
+      ;;
     kimi*)
       # Standalone Kimi stays unknown until fm_busy_kimi_verified opens on a
       # live-verified installed version (bin/fm-busy-lib.sh owns the gate and
@@ -1982,6 +2019,46 @@ EOF
       printf '%s\n' "${auth_file##*/}" > "$STATE/$ID.kimi-turnend-token"
       printf 'token=%s\n' "${auth_file##*/}" > "$WT/.fm-kimi-turnend"
       exclude_path '.fm-kimi-turnend'
+      ;;
+    cursor*)
+      # cursor's native beforeSubmitPrompt/stop user hooks are global and static
+      # (installed above by fm-cursor-turnend-hook.sh), so all per-task data lives
+      # in a private registry entry the hook resolves from the payload. User hooks
+      # run from ~/.cursor, so the guard keys on a .fm-cursor-turnend pointer found
+      # among the payload's workspace_roots[], not cwd. The registry entry carries
+      # this task's turn-end marker, state dir, id, busy gen, and this home's
+      # fm-busy-event.sh path so the shared hook writes cursor-hook busy/idle
+      # events for the right incarnation. The hook is a guarded no-op for every
+      # non-firstmate cursor session and for a worktree without a matching token.
+      CURSOR_AUTH_DIR="$HOME/.cursor/fm-turn-end.d"
+      mkdir -p "$CURSOR_AUTH_DIR"
+      old_umask=$(umask)
+      umask 077
+      auth_file=$(mktemp "$CURSOR_AUTH_DIR/fm.XXXXXXXXXXXX")
+      umask "$old_umask"
+      {
+        printf 'turnend=%s\n' "$TURNEND"
+        printf 'statedir=%s\n' "$STATE_REAL"
+        printf 'id=%s\n' "$ID"
+        printf 'gen=%s\n' "$BUSY_GEN"
+        printf 'busyevent=%s\n' "$FM_ROOT/bin/fm-busy-event.sh"
+      } > "$auth_file"
+      printf '%s\n' "${auth_file##*/}" > "$STATE/$ID.cursor-turnend-token"
+      printf 'token=%s\n' "${auth_file##*/}" > "$WT/.fm-cursor-turnend"
+      exclude_path '.fm-cursor-turnend'
+      # Attribution neutralization (AGENTS.md: never add an agent name as a commit
+      # co-author). cursor defaults attribution.attributeCommitsToAgent and
+      # attributePRsToAgent to true in the GLOBAL ~/.cursor/cli-config.json, which
+      # cursor rewrites at runtime and which concurrent workers share. Instead of a
+      # destructive or racy global edit, drop a per-worktree project config
+      # (.cursor/cli.json) that cursor reads by default and merges over the global
+      # (proven by cursor's own --disable-project-configs flag: "Ignore
+      # .cursor/cli.json files"), setting both flags false for this worktree only.
+      # It is gitignored and removed with the worktree, so no restore is needed and
+      # concurrent cursor tasks never race.
+      mkdir -p "$WT/.cursor"
+      printf '%s\n' '{"version":1,"attribution":{"attributeCommitsToAgent":false,"attributePRsToAgent":false}}' > "$WT/.cursor/cli.json"
+      exclude_path '.cursor/cli.json'
       ;;
   esac
 fi

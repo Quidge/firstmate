@@ -1,6 +1,6 @@
 ---
 name: harness-adapters
-description: Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, pi-signed, grok, and kimi.
+description: Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, pi-signed, grok, kimi, and cursor.
 user-invocable: false
 metadata:
   internal: true
@@ -127,6 +127,7 @@ The supported launch-profile flags below are verified locally; each row records 
 | pi / pi-signed | `--model <model>` | `--thinking <low\|medium\|high\|xhigh\|max>` | Verified 2026-07-27 on Pi and pi-signed 0.82.0. Both expose the same accepted thinking levels and completed the same model-qualified max-thinking smoke. |
 | opencode | `--model <provider/model>` | none for firstmate's interactive launch | Verified on opencode 1.17.6. `opencode run` has `--variant`, but firstmate launches the interactive `opencode --prompt` path, which has no verified effort flag. |
 | kimi | `--model <model>` | none | Verified 2026-07-25 on Kimi Code CLI 0.29.1. |
+| cursor | `--model <model>` | none | Verified 2026-08-04 on cursor-agent 2026.07.23-e383d2b. `--model composer-2.5` selects Composer 2.5 non-fast (the `-fast` variant is a separate model id). Effort is encoded in the model id, not a separate flag, so firstmate emits none and records the requested effort in meta. |
 
 The concrete `harness` field owns adapter identity independently of the model provider: `harness=pi` with `model=xai/grok-*` is Pi using xAI, not `harness=grok`, and does not require Grok CLI login; `harness=grok` remains the standalone Grok Build CLI adapter.
 No script resolves that split for you: establish which credential store a tuple reads from the discovery surfaces below plus `quota-axi auth --json`'s per-provider sources, and show that reasoning rather than inferring it from a harness, model, or source name.
@@ -144,6 +145,7 @@ Use the discovery surface in the current authenticated environment because suppo
 | pi / pi-signed | Run the selected executable as `<executable> --list-models [search]`; Pi's installed `docs/models.md` owns how built-in, extension-registered, and custom provider/model entries reach that list. |
 | grok | Run `grok models`, which lists the models available to the current Grok installation and account. |
 | kimi | Run `kimi provider list --json`, which lists the current provider and model configuration. |
+| cursor | Run `cursor-agent --list-models` (or `cursor-agent models`), which lists the models available to the current Cursor account; `composer-2.5` and `composer-2.5-fast` are distinct entries. |
 
 For an unfamiliar harness or model namespace, establish support and provider identity from that harness's authoritative CLI help, model listing, or current documentation rather than guessing from a name or prefix.
 A listing that reaches the account and does not contain the model is concrete evidence the model is unsupported: block that candidate and quote the result.
@@ -163,6 +165,7 @@ Natural language is acceptable if uncertain.
 - pi and pi-signed: no separate verified skill invocation beyond normal command behavior; use natural language if the exact skill command is uncertain.
 - grok: `/<skill>`, for example `/no-mistakes` (same form as claude). Verified end to end: grok discovers the user-level `no-mistakes` skill, `/no-mistakes` invokes it, and grok drives a real `no-mistakes axi run`. Like codex's `$`/`/` popups, typing `/<skill>` opens grok's slash-autocomplete, so a too-fast Enter selects the popup entry instead of sending, and for an argument-taking command (like `/no-mistakes`'s optional task-first argument) that first Enter only expands the popup selection into an argument-hint placeholder rather than submitting - a genuine second Enter is required (see the grok section below for the 2026-07-03 incident and fix). `fm_tmux_submit_core`'s retried Enter (used by `fm-send` on the tmux backend) handles this through the structural composer reader; the herdr backend needed a dedicated fix (`fm_backend_herdr_composer_state`, docs/herdr-backend.md) because its prior delta-based verification false-positived on that same popup-close content change.
 - kimi: `/<skill>`, for example `/no-mistakes`.
+- cursor: `/<skill>`, for example `/no-mistakes`; cursor's own slash menu is built-ins only (`/model`, `/ask`, `/plan`, ...), so `/no-mistakes` is a firstmate skill invoked by natural language unless a cursor skill is registered. Use natural language if the exact form is uncertain.
 
 ## Submission acknowledgement hazards
 
@@ -397,3 +400,33 @@ The delivery-only spinner match covers the full moon-phase glyph set rather than
 Each Kimi crew worktree receives a gitignored `.fm-kimi-turnend` token pointer, and the global hook touches that task's `state/<id>.turn-ended` only when the Stop payload's `cwd`, pointer, and registry entry all agree.
 A guarded silent hook cannot be verified from absence of effect, so prove invocation with an unguarded probe before concluding that the hook did not fire.
 The guarded turn-end signal remains a wake notification; standalone Kimi has no busy-state source until one is live-verified.
+
+## cursor (VERIFIED 2026-08-04, cursor-agent 2026.07.23-e383d2b, model composer-2.5 non-fast)
+
+Cursor Composer's CLI (`cursor-agent`), a multi-model gateway driven directly like grok/kimi (not ACP).
+Launch with a positional prompt: `cursor-agent --force --trust --model composer-2.5 "$(<brief>)"`.
+
+| Fact | Value |
+|---|---|
+| Busy state | Native user hooks `beforeSubmitPrompt` (busy) and `stop` (idle), live-verified to bracket a real interactive turn; a real semantic source like claude's, not a rendered-tail fallback. `bin/fm-busy-lib.sh` owns the `cursor-hook` source and its `fm_busy_cursor_verified` gate. |
+| Exit command | `/exit` (or `/quit`); both fire `sessionEnd` and terminate the process. |
+| Interrupt | single `Esc` (aborts the running turn and returns the draft to the composer). A single `Ctrl-C` at idle is a harmless no-op. |
+| Skill invocation | `/<skill>` via natural language; cursor's slash menu is built-ins only, so `/no-mistakes` is invoked in prose. |
+| Autonomy | `--force` (footer shows `Run Everything`); auto-approves every tool execution, verified fully unattended. `--yolo` is an alias; `--auto-review` is NOT fully unattended and must not be used for a crewmate. |
+| Trust | `--trust` suppresses the workspace-trust dialog at launch in a fresh worktree, so no post-launch keystroke is needed. |
+| Env marker | None verified as exported to child/tool processes; detection is process ancestry on the `cursor-agent` command name only. |
+| Resume | `cursor-agent --resume [chatId]`, `--continue`, or the `resume`/`ls` subcommands. |
+| Composer | Bordered box; the prompt glyph is `→` (U+2192) rendered dim (SGR 2), and the idle placeholder is `Add a follow-up`, also dim. |
+
+Turn-end and busy hook: cursor loads USER hooks from `~/.cursor/hooks.json` (schema version 1, entries are `{"command":...,"type":"command"}` directly in each event's array), which run from `~/.cursor` - NOT the worktree.
+`fm-spawn` installs one firstmate-owned entry each for `beforeSubmitPrompt` and `stop` through `bin/fm-cursor-turnend-hook.sh`, plus a static guarded hook script and a private token registry under `~/.cursor/fm-turn-end.d/`, and it preserves the captain's own cursor hooks and other `hooks.json` keys.
+Because user hooks run from `~/.cursor`, the guard keys on a `.fm-cursor-turnend` pointer found among the payload's `workspace_roots[]` (NOT cwd), so it is a silent no-op for every non-firstmate cursor session and for a worktree without a matching registry token.
+An interrupted turn fires `stop` twice for one generation (`aborted` then `error`), so the hook dedupes `stop` by `generation_id` to enqueue exactly one wake; `beforeSubmitPrompt` and a completed `stop` fire once each.
+
+Launch-template rule: the launch command MUST let the shell exec `cursor-agent` as its sole/last command with no trailing `;` command.
+The launcher execs node under `exec -a "$0"`, so with a clean exec the pane's `#{pane_current_command}` reports `cursor-agent` (which `bin/backends/tmux.sh`'s alive-set matches); any trailing shell command leaves the pane leader as `bash` and breaks liveness.
+
+Attribution (hard gate): cursor defaults `attribution.attributeCommitsToAgent` and `attributePRsToAgent` to `true` in the global `~/.cursor/cli-config.json`, producing `Co-authored-by: Cursor <cursoragent@cursor.com>`, which violates `AGENTS.md`.
+`fm-spawn` neutralizes this per worktree with a gitignored `.cursor/cli.json` project config (`{"attribution":{"attributeCommitsToAgent":false,"attributePRsToAgent":false}}`) that cursor reads by default and merges over the global (its `--disable-project-configs` flag documents that default read), so no destructive or racy edit of the shared global config is needed and the override is removed with the worktree.
+The `→` composer glyph is handled by `bin/fm-composer-lib.sh` (a `→` agent-glyph arm) and `bin/fm-tmux-lib.sh` (the empty-box geometry proof), so a dim, idle cursor composer classifies empty rather than as pending input.
+`docs/verification/runtime-backends.md` owns the dated live-verification evidence, and `data/cursor-verify/report.md` holds the raw probe transcript.

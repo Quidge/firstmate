@@ -252,6 +252,22 @@ test_dark_truecolor_bare_shell_prompt_is_unknown() {
   pass "fm_tmux_composer_state: dark truecolor shell prompts read unknown"
 }
 
+test_cursor_dim_glyph_and_ghost_composer_is_not_pending() {
+  local dir fb capture
+  dir="$TMP_ROOT/cursor-ghost"; mkdir -p "$dir"
+  fb=$(make_fake_tmux "$dir")
+  capture="$dir/styled.txt"
+  # cursor's pristine composer is a bordered box whose → prompt glyph and
+  # "Add a follow-up" placeholder are both dim (SGR 2). The shared ghost owner
+  # drops the whole run, so the structurally-read box is empty, not pending.
+  printf '╭────────────────────╮\n│ \033[2m→ Add a follow-up\033[0m  │\n╰────────────────────╯\n' > "$capture"
+  if PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
+     fm_pane_input_pending "fakepane"; then
+    fail "cursor's dim → glyph + Add a follow-up ghost composer falsely read as pending"
+  fi
+  pass "fm_pane_input_pending: cursor's dim → glyph and Add a follow-up placeholder is NOT pending"
+}
+
 test_real_text_with_trailing_ghost_is_pending() {
   local dir fb capture
   dir="$TMP_ROOT/mixed"; mkdir -p "$dir"
@@ -473,13 +489,16 @@ test_all_tmux_harness_composers_share_classification() {
   dir="$TMP_ROOT/all-harness-composers"; mkdir -p "$dir"
   fb=$(make_fake_tmux "$dir")
   capture="$dir/styled.txt"
-  for harness in claude codex opencode pi pi-signed grok; do
+  for harness in claude codex opencode pi pi-signed grok cursor; do
     case "$harness" in
       claude) printf '╭────────────╮\n│ ❯ \033[2mtry\033[0m      │\n╰────────────╯\n' > "$capture" ;;
       codex) printf '╭────────────╮\n│ › \033[2mtip\033[0m      │\n╰────────────╯\n' > "$capture" ;;
       opencode) printf '╭────────────╮\n│ >          │\n╰────────────╯\n' > "$capture" ;;
       pi|pi-signed) printf '╭────────────╮\n│            │\n╰────────────╯\n' > "$capture" ;;
       grok) printf '╭────────────╮\n│ ❯ \033[38;2;50;47;70mType\033[0m     │\n╰────────────╯\n' > "$capture" ;;
+      # cursor renders its whole idle composer - the → glyph and the
+      # "Add a follow-up" placeholder - dim (SGR 2), so ghost stripping empties it.
+      cursor) printf '╭────────────────────╮\n│ \033[2m→ Add a follow-up\033[0m  │\n╰────────────────────╯\n' > "$capture" ;;
     esac
     out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
       fm_tmux_composer_state "fakepane")
@@ -488,6 +507,7 @@ test_all_tmux_harness_composers_share_classification() {
     case "$harness" in
       claude|grok) printf '╭────────────╮\n│ ❯ fix      │\n╰────────────╯\n' > "$capture" ;;
       codex) printf '╭────────────╮\n│ › fix      │\n╰────────────╯\n' > "$capture" ;;
+      cursor) printf '╭────────────╮\n│ → fix      │\n╰────────────╯\n' > "$capture" ;;
       opencode|pi|pi-signed) printf '╭────────────╮\n│ > fix      │\n╰────────────╯\n' > "$capture" ;;
     esac
     out=$(PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=1 \
@@ -606,6 +626,7 @@ test_normal_text_still_pending
 test_colored_text_with_2_payload_still_pending
 test_dark_truecolor_ghost_only_composer_is_not_pending
 test_dark_truecolor_bare_shell_prompt_is_unknown
+test_cursor_dim_glyph_and_ghost_composer_is_not_pending
 test_real_text_with_trailing_ghost_is_pending
 test_two_row_composer_reads_text_above_empty_cursor_row
 test_wrapped_composer_reads_all_content_rows

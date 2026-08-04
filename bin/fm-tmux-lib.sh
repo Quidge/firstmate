@@ -171,6 +171,7 @@ fm_tmux_composer_geometry_spaces() {  # <content-inner> -> spaces
     '>'*) content=${content/>/ } ;;
     '❯'*) content=${content/❯/ } ;;
     '›'*) content=${content/›/ } ;;
+    '→'*) content=${content/→/ } ;;
   esac
   content=$(printf '%s' "$content" | LC_ALL=C sed 's/[!-~]/ /g')
   case "$content" in
