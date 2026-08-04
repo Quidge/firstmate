@@ -58,7 +58,7 @@ detect_own() {
       # name a crew ancestor exposes is the cursor-agent basename. No verified
       # env marker is exported to child/tool processes (the wrapper sets
       # CURSOR_INVOKED_AS only in its own process), so detection is ancestry-only.
-      *cursor*) echo cursor; return ;;
+      *cursor-agent*) echo cursor; return ;;
       pi-signed) echo pi; return ;;
       pi) echo pi; return ;;
       node*|python*)
@@ -69,7 +69,7 @@ detect_own() {
           *codex*) echo codex; return ;;
           *opencode*) echo opencode; return ;;
           *grok*) echo grok; return ;;
-          *cursor*) echo cursor; return ;;
+          *cursor-agent*) echo cursor; return ;;
           *" pi "*|*/pi) echo pi; return ;;
         esac ;;
     esac
