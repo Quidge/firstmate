@@ -34,6 +34,8 @@
 #   codex-hook, codex-appserver  reserved: Codex, gated by
 #                    fm_busy_codex_semantic_source
 #   kimi-wire, kimi-hook  reserved: standalone Kimi, gated by fm_busy_kimi_verified
+#   cursor-hook      cursor beforeSubmitPrompt (busy) and stop (idle) user
+#                    hooks, gated by fm_busy_cursor_verified
 # Firstmate-owned sources accepted for every converted adapter:
 #   fm-spawn         the launch-brief turn seeded at spawn
 #   fm-interrupt     a firstmate-controlled interruption of the worker
@@ -94,6 +96,19 @@ FM_BUSY_KIMI_VERIFIED_VERSIONS=""
 
 fm_busy_kimi_verified() {
   [ -n "$FM_BUSY_KIMI_VERIFIED_VERSIONS" ]
+}
+
+# Cursor (cursor-agent / Composer) verification gate. Unlike Kimi and Codex this
+# gate is OPEN: cursor's native beforeSubmitPrompt (busy) and stop (idle) user
+# hooks were live-verified to bracket a real interactive turn on a
+# firstmate-launched worker, including the interrupt path, on cursor-agent
+# 2026.07.23-e383d2b (data/cursor-verify/report.md; the interrupt fires stop
+# twice, aborted then error, for the same generation_id, so the installed hook
+# dedupes stop by generation_id). fm-spawn arms and wires the cursor busy
+# contract behind this gate, and the installed user hook writes cursor-hook
+# busy/idle events through fm-busy-event.sh with the task's armed gen.
+fm_busy_cursor_verified() {
+  return 0
 }
 
 # fm_busy_codex_appserver_observable: capability/version negotiation for the
@@ -176,6 +191,10 @@ fm_busy_sources_for_harness() {  # <harness>
     kimi*)
       fm_busy_kimi_verified || { printf ''; return 0; }
       adapter='kimi-wire kimi-hook'
+      ;;
+    cursor*)
+      fm_busy_cursor_verified || { printf ''; return 0; }
+      adapter=cursor-hook
       ;;
     *) printf ''; return 0 ;;
   esac

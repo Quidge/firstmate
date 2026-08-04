@@ -342,10 +342,33 @@ test_kimi_and_grok_install_no_unverified_wiring() {
   pass "kimi and grok install no unverified semantic wiring and classify through their own gates"
 }
 
+test_cursor_trusts_only_its_verified_hook_source() {
+  local state trusted out gen
+  state="$TMP_ROOT/cursor-gate/state"
+  mkdir -p "$state"
+  fm_busy_cursor_verified || fail "cursor's verification gate must be open"
+  trusted=$(fm_busy_sources_for_harness cursor)
+  [ "$trusted" = "cursor-hook fm-spawn fm-interrupt fm-recovery" ] \
+    || fail "cursor must trust exactly its hook source plus the firstmate-owned sources, got '$trusted'"
+  # A record written by another adapter's source must not classify a cursor task.
+  "$ROOT/bin/fm-busy-event.sh" arm "$state" gate-c >/dev/null
+  gen=$(fm_busy_current_gen "$state" gate-c)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" gate-c busy --gen "$gen" --source claude-hook --event x >/dev/null
+  out=$(fm_busy_classify tmux fake:w cursor gate-c "$state")
+  [ "$out" = "unknown source-mismatch" ] \
+    || fail "a foreign source must not classify a cursor task, got '$out'"
+  # Its own hook source is trusted.
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" gate-c idle --gen "$gen" --source cursor-hook --event stop >/dev/null
+  out=$(fm_busy_classify tmux fake:w cursor gate-c "$state")
+  [ "$out" = "idle cursor-hook" ] || fail "cursor-hook must classify a cursor task, got '$out'"
+  pass "cursor trusts only its verified cursor-hook source and the firstmate-owned sources"
+}
+
 test_pi_extension_semantic_lifecycle
 test_pi_extension_serializes_settle_before_next_start
 test_pi_extension_stale_incarnation_rejected
 test_kimi_and_grok_install_no_unverified_wiring
+test_cursor_trusts_only_its_verified_hook_source
 test_opencode_plugin_semantic_lifecycle
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless

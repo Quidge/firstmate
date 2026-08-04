@@ -135,6 +135,28 @@ tests/fm-tmux-submit-busy.test.sh
 Expected structural matrix: real text on any content row is pending; all-empty complete boxes are empty; unreadable, incomplete, or unsafe boxes are unknown; and non-bordered panes retain cursor-row compatibility.
 Expected submit matrix: proven pending plus busy is accepted as queued; proven pending plus idle remains pending; ambiguous pending is never converted by the busy exception; and only a proven empty composer succeeds directly.
 
+### cursor (2026-08-04, cursor-agent 2026.07.23-e383d2b)
+
+Cursor Composer was verified with an interactive worker launched in a separate pane and an unguarded probe hook at `~/.cursor/hooks.json`; the raw probe transcript is `data/cursor-verify/report.md` and its `probe-log-snapshot.txt`.
+The confirmed facts the adapter depends on:
+
+- Liveness: a worker launched so the shell execs `cursor-agent` as its sole command reports `#{pane_current_command}` = `cursor-agent`, stable at idle and after a turn, so `bin/backends/tmux.sh`'s `*cursor*` alive-set arm matches; a trailing shell command instead leaves the pane leader as `bash`, which is why the launch template ends with `cursor-agent`.
+- Busy/turn-end: the native `beforeSubmitPrompt` (busy) and `stop` (turn-end/idle) user hooks fire for the interactive worker, carry `workspace_roots[]`, `generation_id`, and `hook_event_name`, and an interrupted turn fires `stop` twice for one `generation_id` (`aborted` then `error`), so the installed hook dedupes `stop` by `generation_id`.
+- Attribution: the global `~/.cursor/cli-config.json` defaults `attributeCommitsToAgent`/`attributePRsToAgent` to `true`; cursor reads a per-project `.cursor/cli.json` by default (its `--disable-project-configs` flag documents that default read) and merges it over the global, so a gitignored per-worktree `.cursor/cli.json` disabling both flags neutralizes attribution without a global edit.
+- Composer: the idle composer is a bordered box whose `→` (U+2192) glyph and `Add a follow-up` placeholder are both dim (SGR 2).
+
+CI-enforced portable regressions:
+
+```sh
+tests/fm-cursor-harness.test.sh      # launch template, hook guard + busy lifecycle + stop dedupe, teardown, attribution, detection, lock
+tests/fm-busy-adapter-wiring.test.sh # cursor-hook is the only trusted cursor source
+tests/fm-composer-ghost.test.sh      # dim → glyph + Add a follow-up idle composer reads empty
+tests/fm-composer-lib.test.sh        # → agent-glyph classification
+tests/fm-tmux-agent-liveness.test.sh # a cursor-agent foreground process classifies alive
+```
+
+The live trailer-free-commit proof (a cursor worker committing with no `Co-authored-by: Cursor` trailer) requires an interactive worker and is captured during the supervised cursor test-drive, since a crewmate cannot launch the cursor TUI in its own pane.
+
 ### Cleanup endpoint identity
 
 The cleanup identity boundary was validated on 2026-07-28 with tmux 3.6a and metadata fixtures for every supported backend.

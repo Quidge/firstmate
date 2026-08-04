@@ -53,6 +53,7 @@ export PATH
 # the executable identity, which is exactly the signal under test.
 ln -s "$SLEEP_BIN" "$LAB/bin/claude-link"
 ln -s "$SLEEP_BIN" "$LAB/bin/pi"
+ln -s "$SLEEP_BIN" "$LAB/bin/cursor-agent"
 ln -s "$SLEEP_BIN" "$LAB/bin/notaharness"
 
 # A launcher whose own process identity is a bare shell, running the harness as
@@ -143,6 +144,13 @@ new_window agent "$LAB/bin/claude-link" 900
 wait_for_state "$SESSION:agent" alive \
   || fail "a running harness-named foreground process must classify alive"
 pass "tmux liveness: a harness-named foreground process classifies alive"
+
+# cursor-agent is a node wrapper whose pane reports `cursor-agent` (argv[0]); the
+# alive-set arm must match it so a cursor secondmate is never seen as dead.
+new_window cursor "$LAB/bin/cursor-agent" 900
+wait_for_state "$SESSION:cursor" alive \
+  || fail "a running cursor-agent foreground process must classify alive"
+pass "tmux liveness: a cursor-agent foreground process classifies alive"
 
 # --- a version name blinds one source ---------------------------------------
 # Giving a genuine harness-named executable the version-string argv[0] that
