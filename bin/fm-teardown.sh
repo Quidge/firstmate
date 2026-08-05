@@ -489,6 +489,9 @@ remove_kimi_turnend_auth() {
 
 remove_cursor_turnend_auth() {
   local state_dir=$1 id=$2 token hooks_dir
+  # The per-task commit-msg hook dir (attribution neutralization) is keyed only on
+  # the task id, so remove it unconditionally, before the turn-end token gate below.
+  rm -rf "$state_dir/$id.cursor-git-hooks"
   token=$(cat "$state_dir/$id.cursor-turnend-token" 2>/dev/null || true)
   case "$token" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
   hooks_dir="$HOME/.cursor/fm-turn-end.d"
@@ -1628,7 +1631,7 @@ cleanup_firstmate_home_children() {
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
         rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend" \
-          "$child_wt/.fm-cursor-turnend" "$child_wt/.cursor/cli.json"
+          "$child_wt/.fm-cursor-turnend"
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
@@ -1636,7 +1639,7 @@ cleanup_firstmate_home_children() {
       rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
         "$child_wt/.opencode/plugins/fm-busy-state.js" \
         "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend" \
-        "$child_wt/.fm-cursor-turnend" "$child_wt/.cursor/cli.json"
+        "$child_wt/.fm-cursor-turnend"
       if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
         if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
           :
@@ -1806,7 +1809,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
       "$WT/.opencode/plugins/fm-busy-state.js" \
       "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend" \
-      "$WT/.fm-cursor-turnend" "$WT/.cursor/cli.json"
+      "$WT/.fm-cursor-turnend"
   fi
   [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
@@ -1820,7 +1823,7 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
   rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
     "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend" \
-    "$WT/.fm-cursor-turnend" "$WT/.cursor/cli.json"
+    "$WT/.fm-cursor-turnend"
   # Kills remaining processes in the worktree (including the agent), resets, returns
   # to pool. treehouse resolves the pool from the working directory, so run it from
   # the project. teardown_treehouse_return tolerates transient and stale git locks

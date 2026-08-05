@@ -142,20 +142,25 @@ The confirmed facts the adapter depends on:
 
 - Liveness: a worker launched so the shell execs `cursor-agent` as its sole command reports `#{pane_current_command}` = `cursor-agent`, stable at idle and after a turn, so `bin/backends/tmux.sh`'s `*cursor*` alive-set arm matches; a trailing shell command instead leaves the pane leader as `bash`, which is why the launch template ends with `cursor-agent`.
 - Busy/turn-end: the native `beforeSubmitPrompt` (busy) and `stop` (turn-end/idle) user hooks fire for the interactive worker, carry `workspace_roots[]`, `generation_id`, and `hook_event_name`, and an interrupted turn fires `stop` twice for one `generation_id` (`aborted` then `error`), so the installed hook dedupes `stop` by `generation_id`.
-- Attribution: the global `~/.cursor/cli-config.json` defaults `attributeCommitsToAgent`/`attributePRsToAgent` to `true`; cursor reads a per-project `.cursor/cli.json` by default (its `--disable-project-configs` flag documents that default read) and merges it over the global, so a gitignored per-worktree `.cursor/cli.json` disabling both flags neutralizes attribution without a global edit.
+- Attribution: cursor's server-driven attribution runs `git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>"`; the only suppressing config is `attributeCommitsToAgent`/`attributePRsToAgent` in the global `~/.cursor/cli-config.json`, but the project `.cursor/cli.json` schema accepts only `permissions` (an `attribution` block there is rejected with `Unrecognized key(s)` and crashes the launch) and cursor rewrites the shared global at runtime, so `fm-spawn` instead installs a per-task `commit-msg` hook (reached via env-injected `core.hooksPath`) that strips the Cursor trailer with no cursor-config edit. See the live proof below.
 - Composer: the idle composer is a bordered box whose `→` (U+2192) glyph and `Add a follow-up` placeholder are both dim (SGR 2).
 
 CI-enforced portable regressions:
 
 ```sh
-tests/fm-cursor-harness.test.sh      # launch template, hook guard + busy lifecycle + stop dedupe, teardown, attribution, detection, lock
+tests/fm-cursor-harness.test.sh      # launch template, hook guard + busy lifecycle + stop dedupe, teardown, commit-msg attribution hook + core.hooksPath wiring, detection, lock
 tests/fm-busy-adapter-wiring.test.sh # cursor-hook is the only trusted cursor source
 tests/fm-composer-ghost.test.sh      # dim → glyph + Add a follow-up idle composer reads empty
 tests/fm-composer-lib.test.sh        # → agent-glyph classification
 tests/fm-tmux-agent-liveness.test.sh # a cursor-agent foreground process classifies alive
 ```
 
-The live trailer-free-commit proof (a cursor worker committing with no `Co-authored-by: Cursor` trailer) requires an interactive worker and is captured during the supervised cursor test-drive, since a crewmate cannot launch the cursor TUI in its own pane.
+Live attribution proof (2026-08-05, cursor-agent 2026.07.23-e383d2b, git 2.53.0), run with an interactive worker in a separate tmux window because a crewmate cannot launch the cursor TUI in its own pane:
+
+- Old mechanism crashes the launch: a throwaway repo carrying the merged adapter's project `.cursor/cli.json` (`{"version":1,"attribution":{...}}`) launched with `cursor-agent --force --trust --model composer-2.5 "..."` printed `Invalid project config ... Unrecognized key(s) in object: 'version', 'attribution'` and dropped the pane leader to `bash`, so cursor never started.
+- New mechanism launches and strips the trailer: with no cursor config, the per-task `commit-msg` hook installed under `state/<id>.cursor-git-hooks/`, and `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=<hook dir>` exported before launch, the pane leader stayed `cursor-agent` (no crash) and the worker's own autonomous `git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" -m ...` produced commit body `Add READY marker.` with no `Co-authored-by` trailer (`git log -1 --format=%B`), the hook being the sole reason the trailer is absent because cursor's default attribution stayed enabled.
+
+Refresh this proof after a cursor-agent upgrade with the same two-repo drive (bad-config crash, then hooked trailer-free commit); a unit test cannot cover it because the trailer is server-driven and only a real worker emits the `--trailer` commit.
 
 ### Cleanup endpoint identity
 
