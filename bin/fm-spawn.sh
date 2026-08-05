@@ -2224,19 +2224,6 @@ fi
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
-# Activate the cursor attribution-stripping commit-msg hook for the cursor worker
-# by pointing git at its per-task hooks dir via the GIT_CONFIG_* environment (git
-# ignores a per-worktree hooks dir but honors an env-injected core.hooksPath).
-# Sent on the same GOTMPDIR channel so it lands before launch and is inherited by
-# every git the cursor worker runs; the hook itself is a no-op for any commit
-# without a Cursor trailer, so it never disturbs no-mistakes commits in the pane.
-# Gated to non-secondmate exactly like the hook creation above, so the injected
-# path always names a hook dir that was actually written.
-if [ "$HARNESS" = cursor ] && [ "$KIND" != secondmate ]; then
-  spawn_send_text_line "$T" "export GIT_CONFIG_COUNT=1"
-  spawn_send_text_line "$T" "export GIT_CONFIG_KEY_0=core.hooksPath"
-  spawn_send_text_line "$T" "export GIT_CONFIG_VALUE_0=$(shell_quote "$STATE_REAL/$ID.cursor-git-hooks")"
-fi
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped
 # entirely when trace context is off.
@@ -2252,6 +2239,19 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
       exit 1
     fi
   fi
+fi
+# Activate the cursor attribution-stripping commit-msg hook for the cursor worker
+# by pointing git at its per-task hooks dir via the GIT_CONFIG_* environment (git
+# ignores a per-worktree hooks dir but honors an env-injected core.hooksPath).
+# Sent on the same GOTMPDIR channel so it lands before launch and is inherited by
+# every git the cursor worker runs; the hook itself is a no-op for any commit
+# without a Cursor trailer, so it never disturbs no-mistakes commits in the pane.
+# Gated to non-secondmate exactly like the hook creation above, so the injected
+# path always names a hook dir that was actually written.
+if [ "$HARNESS" = cursor ] && [ "$KIND" != secondmate ]; then
+  spawn_send_text_line "$T" "export GIT_CONFIG_COUNT=1"
+  spawn_send_text_line "$T" "export GIT_CONFIG_KEY_0=core.hooksPath"
+  spawn_send_text_line "$T" "export GIT_CONFIG_VALUE_0=$(shell_quote "$STATE_REAL/$ID.cursor-git-hooks")"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
