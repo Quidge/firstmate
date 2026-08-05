@@ -1,6 +1,8 @@
 ---
 name: aside
-description: Open a dedicated interactive window the captain talks to directly for ad-hoc, multi-turn context-gathering, then hand the outcome back to the main firstmate. Invoke when the captain says /aside, wants a side conversation or scratch space for a topic, or asks to work something out interactively instead of loading it into the main chat.
+description: >-
+  Open a dedicated interactive window the captain talks to directly for ad-hoc, multi-turn context-gathering, then hand the outcome back to the main firstmate.
+  Invoke when the captain says /aside, wants a side conversation or scratch space for a topic, or asks to work something out interactively instead of loading it into the main chat.
 user-invocable: true
 metadata:
   internal: true
