@@ -83,7 +83,7 @@
 #   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
-#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi)
+#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor)
 #   overrides it for this spawn (either kind). A non-flag string containing
 #   whitespace is treated as a RAW launch command - the escape hatch for verifying
 #   new adapters. pi-signed launches that exact executable name from PATH and
@@ -135,8 +135,9 @@
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
 # cursor uses firstmate-owned entries in $HOME/.cursor/hooks.json plus a global
 # registry, a gitignored .fm-cursor-turnend worktree pointer and a state token,
-# and a gitignored .cursor/cli.json that neutralizes commit/PR agent attribution
-# for that worktree only.
+# and a per-task commit-msg hook (reached via env-injected core.hooksPath) that
+# strips cursor-agent's Co-authored-by attribution trailer without touching any
+# cursor config; the hook dir lives under state/ and is removed at teardown.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
 # A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
 # mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
@@ -2047,18 +2048,46 @@ EOF
       printf 'token=%s\n' "${auth_file##*/}" > "$WT/.fm-cursor-turnend"
       exclude_path '.fm-cursor-turnend'
       # Attribution neutralization (AGENTS.md: never add an agent name as a commit
-      # co-author). cursor defaults attribution.attributeCommitsToAgent and
-      # attributePRsToAgent to true in the GLOBAL ~/.cursor/cli-config.json, which
-      # cursor rewrites at runtime and which concurrent workers share. Instead of a
-      # destructive or racy global edit, drop a per-worktree project config
-      # (.cursor/cli.json) that cursor reads by default and merges over the global
-      # (proven by cursor's own --disable-project-configs flag: "Ignore
-      # .cursor/cli.json files"), setting both flags false for this worktree only.
-      # It is gitignored and removed with the worktree, so no restore is needed and
-      # concurrent cursor tasks never race.
-      mkdir -p "$WT/.cursor"
-      printf '%s\n' '{"version":1,"attribution":{"attributeCommitsToAgent":false,"attributePRsToAgent":false}}' > "$WT/.cursor/cli.json"
-      exclude_path '.cursor/cli.json'
+      # co-author). cursor's server-driven attribution runs `git commit --trailer
+      # "Co-authored-by: Cursor <cursoragent@cursor.com>"`; the only config that
+      # suppresses it lives in the GLOBAL ~/.cursor/cli-config.json (the project
+      # .cursor/cli.json schema accepts only `permissions`, so an attribution block
+      # there crashes the launch), and cursor rewrites that global file at runtime
+      # and shares it across concurrent workers. So instead of any cursor config we
+      # install a per-task git commit-msg hook that strips the Cursor trailer from
+      # every commit this worker makes, and reach it through env-injected
+      # core.hooksPath below (git resolves worktree hooks from the shared common
+      # dir, so a per-worktree hooks dir would not fire). The hook lives under
+      # state/, outside the worktree, so it never shows in git status, never races
+      # another worker, and is removed by teardown.
+      CURSOR_GIT_HOOKS_DIR="$STATE_REAL/$ID.cursor-git-hooks"
+      mkdir -p "$CURSOR_GIT_HOOKS_DIR"
+      cat > "$CURSOR_GIT_HOOKS_DIR/commit-msg" <<'CURSOR_COMMIT_MSG_HOOK'
+#!/usr/bin/env bash
+# firstmate-owned per-task commit-msg hook (bin/fm-spawn.sh, cursor adapter).
+# Strips cursor-agent's Co-authored-by attribution trailer so a firstmate-launched
+# cursor crew never records an agent co-author (AGENTS.md: never add an agent name
+# as a commit co-author). Reached only by the cursor worker via env-injected
+# core.hooksPath; it edits the message in place, leaves every other line byte for
+# byte, and never blocks a commit.
+set -u
+msg=${1:-}
+[ -n "$msg" ] && [ -f "$msg" ] || exit 0
+# A Co-authored-by trailer whose email is in cursor's agent namespace
+# (cursoragent@cursor.com and the cursor.com/cursor.sh domains), case-insensitive.
+# A human co-author never uses that address, so legitimate trailers are preserved.
+re='^[[:space:]]*Co-authored-by:.*<[^>]*@cursor\.(com|sh)>[[:space:]]*$'
+if grep -iqE "$re" "$msg" 2>/dev/null; then
+  tmp="$msg.fm-cursor.$$"
+  if grep -ivE "$re" "$msg" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$msg"
+  else
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+fi
+exit 0
+CURSOR_COMMIT_MSG_HOOK
+      chmod +x "$CURSOR_GIT_HOOKS_DIR/commit-msg"
       ;;
   esac
 fi
@@ -2210,6 +2239,19 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
       exit 1
     fi
   fi
+fi
+# Activate the cursor attribution-stripping commit-msg hook for the cursor worker
+# by pointing git at its per-task hooks dir via the GIT_CONFIG_* environment (git
+# ignores a per-worktree hooks dir but honors an env-injected core.hooksPath).
+# Sent on the same GOTMPDIR channel so it lands before launch and is inherited by
+# every git the cursor worker runs; the hook itself is a no-op for any commit
+# without a Cursor trailer, so it never disturbs no-mistakes commits in the pane.
+# Gated to non-secondmate exactly like the hook creation above, so the injected
+# path always names a hook dir that was actually written.
+if [ "$HARNESS" = cursor ] && [ "$KIND" != secondmate ]; then
+  spawn_send_text_line "$T" "export GIT_CONFIG_COUNT=1"
+  spawn_send_text_line "$T" "export GIT_CONFIG_KEY_0=core.hooksPath"
+  spawn_send_text_line "$T" "export GIT_CONFIG_VALUE_0=$(shell_quote "$STATE_REAL/$ID.cursor-git-hooks")"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"

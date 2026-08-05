@@ -2,8 +2,9 @@
 # Behavior tests for the verified cursor-agent (Cursor Composer) crewmate adapter:
 # launch template, the guarded global user hook + per-task registry, the semantic
 # busy lifecycle its beforeSubmitPrompt/stop hooks drive, the stop-double-fire
-# dedupe, the non-destructive commit/PR attribution neutralization, teardown
-# cleanup, detection, and session-lock holder recognition.
+# dedupe, the per-task commit-msg hook that strips cursor's agent trailer (wired
+# via env-injected core.hooksPath, no cursor-config edit), teardown cleanup,
+# detection, and session-lock holder recognition.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -35,6 +36,7 @@ case "${1:-}" in
   list-windows) exit 0 ;;
   has-session|new-session|new-window|kill-window) exit 0 ;;
   send-keys)
+    [ -n "${FM_FAKE_TEXT_LOG:-}" ] && printf '%s\n' "$*" >> "$FM_FAKE_TEXT_LOG"
     prev=
     for arg in "$@"; do
       if [ "$prev" = -l ]; then printf '%s\n' "$arg" >> "$FM_FAKE_LAUNCH_LOG"; break; fi
@@ -64,6 +66,7 @@ make_spawn_case() {  # <name> <id>
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-watcher-beat"
   : > "$case_dir/launch.log"
+  : > "$case_dir/text.log"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
 
@@ -80,7 +83,7 @@ run_spawn() {  # <case_dir> <home> <proj> <wt> <fakebin> <id> [extra spawn args.
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
+    FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" FM_FAKE_TEXT_LOG="$case_dir/text.log" \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "$id" "$proj" --harness cursor --mode no-mistakes --yolo off "$@" 2>&1
 }
@@ -146,17 +149,49 @@ test_cursor_spawn_installs_hook_registers_token_and_neutralizes_attribution() {
   assert_grep "busyevent=$ROOT/bin/fm-busy-event.sh" "$HOME_DIR/.cursor/fm-turn-end.d/$token" \
     "cursor registry entry did not record this home's fm-busy-event path"
 
-  # Attribution neutralization: per-worktree .cursor/cli.json, both flags false, gitignored.
-  assert_present "$WT_DIR/.cursor/cli.json" "cursor attribution neutralization file was not written"
-  "$JQ_BIN" -e '.attribution.attributeCommitsToAgent == false and .attribution.attributePRsToAgent == false' \
-    "$WT_DIR/.cursor/cli.json" >/dev/null \
-    || fail "cursor .cursor/cli.json did not disable both commit and PR attribution"
   local excl
   excl=$(git -C "$WT_DIR" rev-parse --git-path info/exclude)
   case "$excl" in /*) : ;; *) excl="$WT_DIR/$excl" ;; esac
-  assert_grep '.cursor/cli.json' "$excl" "attribution file was not gitignored"
   assert_grep '.fm-cursor-turnend' "$excl" "cursor pointer was not gitignored"
-  pass "fm-spawn: cursor installs its hook, registers a task token, and neutralizes commit/PR attribution"
+
+  # Attribution neutralization: a per-task commit-msg hook under state/, NOT the old
+  # crash-inducing project .cursor/cli.json, wired for the worker via core.hooksPath.
+  assert_absent "$WT_DIR/.cursor/cli.json" \
+    "cursor still writes the project .cursor/cli.json that crashes the launch"
+  local hookdir hook
+  # fm-spawn resolves the hook dir under the canonicalized state path (STATE_REAL),
+  # so mirror that here and match the shell-quoted value fm-spawn exports.
+  hookdir="$(cd "$HOME_DIR/state" && pwd -P)/$id.cursor-git-hooks"
+  hook="$hookdir/commit-msg"
+  assert_present "$hook" "cursor commit-msg attribution hook was not installed"
+  [ -x "$hook" ] || fail "cursor commit-msg hook is not executable"
+  # The worker's git is pointed at the hook dir through the GIT_CONFIG_* env, sent
+  # before launch on the same channel as GOTMPDIR.
+  assert_grep 'export GIT_CONFIG_KEY_0=core.hooksPath' "$CASE_DIR/text.log" \
+    "cursor spawn did not wire core.hooksPath into the worker env"
+  assert_grep "GIT_CONFIG_VALUE_0='$hookdir'" "$CASE_DIR/text.log" \
+    "cursor spawn did not point core.hooksPath at the per-task hook dir"
+
+  # The hook strips only cursor's agent trailer and leaves every other line intact.
+  local msgfile
+  msgfile="$CASE_DIR/commit-msg-sample"
+  {
+    printf '%s\n\n' 'Add a feature'
+    printf '%s\n' 'Co-authored-by: Real Person <human@example.com>'
+    printf '%s\n' 'Co-authored-by: Cursor <cursoragent@cursor.com>'
+  } > "$msgfile"
+  "$hook" "$msgfile" || fail "cursor commit-msg hook exited nonzero"
+  assert_no_grep 'cursoragent@cursor.com' "$msgfile" "hook left cursor's agent trailer in the message"
+  assert_grep 'human@example.com' "$msgfile" "hook stripped a legitimate human co-author"
+  assert_grep 'Add a feature' "$msgfile" "hook mangled the commit subject"
+  # A message with no cursor trailer is passed through byte for byte.
+  local clean
+  clean="$CASE_DIR/commit-msg-clean"
+  printf '%s\n\n%s\n' 'Fix bug' 'Signed-off-by: Dev <dev@example.com>' > "$clean"
+  cp "$clean" "$clean.orig"
+  "$hook" "$clean" || fail "cursor commit-msg hook exited nonzero on a clean message"
+  cmp -s "$clean" "$clean.orig" || fail "hook altered a commit message with no cursor trailer"
+  pass "fm-spawn: cursor installs its hook, registers a task token, and neutralizes commit attribution"
 }
 
 test_cursor_hook_busy_lifecycle_and_stop_dedupe() {
@@ -245,6 +280,9 @@ test_cursor_teardown_removes_pointer_registry_and_attribution() {
   token=$(sed -n 's/^token=//p' "$WT_DIR/.fm-cursor-turnend")
   # Simulate an accumulated stop-dedupe directory so teardown must clear it too.
   mkdir -p "$HOME_DIR/.cursor/fm-turn-end.d/$token.stops/gen-A"
+  # spawn created the per-task attribution hook dir; teardown must remove it.
+  assert_present "$HOME_DIR/state/$id.cursor-git-hooks/commit-msg" \
+    "cursor attribution hook was not present before teardown"
 
   HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
@@ -253,11 +291,11 @@ test_cursor_teardown_removes_pointer_registry_and_attribution() {
     "$TEARDOWN" "$id" --force >/dev/null 2>&1 || fail "cursor teardown failed"
 
   assert_absent "$WT_DIR/.fm-cursor-turnend" "cursor pointer survived teardown"
-  assert_absent "$WT_DIR/.cursor/cli.json" "cursor attribution file survived teardown"
+  assert_absent "$HOME_DIR/state/$id.cursor-git-hooks" "cursor attribution hook dir survived teardown"
   assert_absent "$HOME_DIR/.cursor/fm-turn-end.d/$token" "cursor registry token survived teardown"
   assert_absent "$HOME_DIR/.cursor/fm-turn-end.d/$token.stops" "cursor stop-dedupe dir survived teardown"
   assert_absent "$HOME_DIR/state/$id.cursor-turnend-token" "cursor state token survived teardown"
-  pass "fm-teardown: cursor pointer, registry token, dedupe dir, and attribution file are removed"
+  pass "fm-teardown: cursor pointer, registry token, dedupe dir, and attribution hook dir are removed"
 }
 
 test_cursor_hook_install_is_idempotent_and_preserves_foreign_hooks() {
