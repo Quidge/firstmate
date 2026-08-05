@@ -15,9 +15,10 @@ Keep it minimal - this is a chat space, not project work, so no PR and no lavish
 1. Resolve a short task id (e.g. `aside-<topic>`) and a working directory: the relevant project clone under `projects/` if the aside is about one, otherwise this firstmate repo so the window still gets an isolated scratch worktree.
 2. Scaffold a scout brief: `bin/fm-brief.sh <id> <repo-name> --scout`.
    Replace `{TASK}` with the aside contract: this is an INTERACTIVE, captain-facing session; talk to the captain directly in this window (a deliberate bend of hard rule 4); gather context on the topic through as many turns as the captain wants; do NOT do project work or open a PR.
-   The session MUST append `paused: awaiting captain` to `state/<id>.status` whenever it finishes a turn and is waiting on the captain's reply, so its idle reads as a bounded human-wait rather than a possible wedge.
-   Keep the scout's own report-plus-status conclusion contract.
-   Tell the session to conclude only when the captain says so: write the outcome to `data/<id>/report.md`, then append `done: <one-line outcome>` to `state/<id>.status`.
+   Replace the scaffold's `Work on your own; do not wait for a human` clause with an explicit override: this session MUST wait for the captain and converse with the captain directly across turns.
+   Replace the scaffold's external-wait-only `paused:` clause with an explicit override: append `paused: awaiting captain` to `state/<id>.status` after every turn that awaits the captain's reply, treating that bounded human-wait as healthy idle.
+   Replace the scout's self-determined completion trigger with an explicit override: the session MUST NOT conclude because it judges the topic settled, complete, or resolved.
+   Only the captain explicitly saying they are done triggers handback: write the outcome to `data/<id>/report.md`, then append `done: <one-line outcome>` to `state/<id>.status`.
 3. Spawn it: `bin/fm-spawn.sh <id> <working-dir> --scout`.
 4. Tell the captain, in plain language, which window to switch to (the `window=` value the spawn printed) to start the conversation.
    Then resume ordinary supervision; the aside runs on its own and wakes firstmate through its status line.
