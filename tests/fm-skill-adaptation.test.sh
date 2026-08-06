@@ -133,6 +133,19 @@ test_placeholder_bullet_is_not_a_deviation() {
   pass "audit: an angle-bracket placeholder bullet is not a declaration"
 }
 
+test_variant_heading_is_not_the_ledger() {
+  local sk
+  sk=$(fresh_case variant_heading)
+  printf 'local edit\n' >"$sk/SKILL.md"
+  printf -- '---\nattributions:\n- %s\n---\n\n### deviations\n\n- keep the local edit\n' \
+    "$ATTR" >"$sk/ADAPTATION.md"
+  audit_case variant_heading
+  expect_code 1 "$RC" "variant deviation heading does not declare a deviation"
+  assert_contains "$OUT" "UNDECLARED DRIFT" "variant heading leaves drift undeclared"
+  assert_not_contains "$OUT" "keep the local edit" "variant heading bullet is ignored"
+  pass "audit: only the exact ## Deviations heading identifies the ledger"
+}
+
 test_quiet_predicate() {
   local sk
   sk=$(fresh_case quiet_ok)
@@ -166,6 +179,19 @@ test_fetch_failure_fails_loudly() {
   pass "audit: an unreachable base fails loudly (exit 3), never clean"
 }
 
+test_skill_less_base_fails_loudly() {
+  local sk base
+  sk=$(fresh_case skill_less)
+  base="$TMP_ROOT/skill_less/base/org/repo/$SHA/skills/foo"
+  rm "$base/SKILL.md"
+  printf 'upstream ref\n' >"$base/reference.md"
+  write_adaptation "$sk" "$ATTR" </dev/null
+  audit_case skill_less
+  expect_code 3 "$RC" "base without SKILL.md returns the dedicated fetch code"
+  assert_contains "$OUT" "pinned base tree has no SKILL.md" "invalid base names the missing root file"
+  pass "audit: a SKILL.md-less base fails loudly (exit 3), never clean"
+}
+
 test_multi_attribution_drift() {
   local sk base2
   sk=$(fresh_case multi)
@@ -173,6 +199,7 @@ test_multi_attribution_drift() {
   local attr2="https://github.com/org/two/tree/$sha2/skills/bar"
   base2="$TMP_ROOT/multi/base/org/two/$sha2/skills/bar"
   mkdir -p "$base2"
+  printf 'upstream line\n' >"$base2/SKILL.md"
   printf 'bar upstream\n' >"$base2/EXTRA.md"
   printf 'bar local edit\n' >"$sk/EXTRA.md"
   write_adaptation "$sk" "$ATTR" "$attr2" </dev/null
@@ -220,8 +247,10 @@ test_undeclared_removed
 test_stale_bullet
 test_mixed_presents_both_sides
 test_placeholder_bullet_is_not_a_deviation
+test_variant_heading_is_not_the_ledger
 test_quiet_predicate
 test_fetch_failure_fails_loudly
+test_skill_less_base_fails_loudly
 test_multi_attribution_drift
 test_hard_errors
 test_validate_passes_on_the_new_skill_dir

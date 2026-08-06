@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -288,14 +289,15 @@ def parse_deviation_bullets(body: str) -> list[str]:
     bullets: list[str] = []
     in_section = False
     for raw in body.splitlines():
-        line = raw.rstrip()
-        heading = re.match(r"^(#{1,6})\s+(.*)$", line)
-        if heading is not None:
-            in_section = heading.group(2).strip().lower() == "deviations"
+        if raw == "## Deviations":
+            in_section = True
+            continue
+        if re.match(r"^#{1,6}(?:\s|$)", raw) is not None:
+            in_section = False
             continue
         if not in_section:
             continue
-        item = re.match(r"^[-*]\s+(.*)$", line.strip())
+        item = re.match(r"^[-*]\s+(.*)$", raw.strip())
         if item is None:
             continue
         text = item.group(1).strip()
@@ -319,7 +321,7 @@ def _read_base_from_cache(
 ) -> dict[str, bytes]:
     """Read a pinned base subtree from a local cache directory."""
     root = base_dir / attribution.owner / attribution.repo / attribution.sha
-    root = root / attribution.path
+    root = root / urllib.parse.unquote(attribution.path)
     if not root.is_dir():
         msg = f"no cached base tree at {root}"
         raise FetchError(msg)
@@ -363,7 +365,7 @@ def _fetch_base_from_github(attribution: Attribution) -> dict[str, bytes]:
         msg = f"tree listing truncated for {attribution.url}; cannot audit"
         raise FetchError(msg)
 
-    prefix = attribution.path + "/"
+    prefix = urllib.parse.unquote(attribution.path) + "/"
     files: dict[str, bytes] = {}
     for entry in tree.get("tree", []):
         if entry.get("type") != "blob":
@@ -372,9 +374,10 @@ def _fetch_base_from_github(attribution: Attribution) -> dict[str, bytes]:
         if not full.startswith(prefix):
             continue
         relpath = full[len(prefix) :]
+        encoded_full = urllib.parse.quote(full, safe="/")
         content_url = (
             f"https://raw.githubusercontent.com/{attribution.owner}"
-            f"/{attribution.repo}/{attribution.sha}/{full}"
+            f"/{attribution.repo}/{attribution.sha}/{encoded_full}"
         )
         files[relpath] = _http_get(content_url, accept="application/octet-stream")
     return files
@@ -389,8 +392,13 @@ def fetch_base_files(attribution: Attribution) -> dict[str, bytes]:
     """
     base_dir = os.environ.get(_BASE_DIR_ENV)
     if base_dir:
-        return _read_base_from_cache(Path(base_dir), attribution)
-    return _fetch_base_from_github(attribution)
+        files = _read_base_from_cache(Path(base_dir), attribution)
+    else:
+        files = _fetch_base_from_github(attribution)
+    if _SKILL_NAME not in files:
+        msg = f"pinned base tree has no {_SKILL_NAME}: {attribution.url}"
+        raise FetchError(msg)
+    return files
 
 
 def compute_drift(
