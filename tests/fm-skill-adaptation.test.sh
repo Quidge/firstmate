@@ -133,6 +133,47 @@ test_placeholder_bullet_is_not_a_deviation() {
   pass "audit: an angle-bracket placeholder bullet is not a declaration"
 }
 
+test_sentinel_no_deviations_is_clean() {
+  local sk
+  sk=$(fresh_case sentinel_clean)
+  # base == ours (a verbatim vendor) with the "no deviations" sentinel: the
+  # single literal line means zero deviations, so it must audit clean, not stale.
+  write_adaptation "$sk" "$ATTR" <<<'- no current deviations'
+  audit_case sentinel_clean
+  expect_code 0 "$RC" "the no-deviations sentinel over a clean tree is clean"
+  assert_contains "$OUT" "clean:" "sentinel is treated as zero declared deviations"
+  assert_contains "$OUT" "no current deviations" "sentinel line is echoed in the report"
+  assert_contains "$OUT" "sentinel:" "the report explains the sentinel"
+  assert_not_contains "$OUT" "STALE DEVIATIONS" "sentinel is never a stale bullet"
+  pass "audit: a sole '- no current deviations' sentinel audits clean (exit 0)"
+}
+
+test_sentinel_with_drift_is_undeclared() {
+  local sk
+  sk=$(fresh_case sentinel_drift)
+  printf 'local edit\n' >"$sk/SKILL.md"
+  # The sentinel declares zero deviations, so a real local edit under it is
+  # undeclared drift the next rebase would revert - not a covered change.
+  write_adaptation "$sk" "$ATTR" <<<'- no current deviations'
+  audit_case sentinel_drift
+  expect_code 1 "$RC" "drift under the sentinel is undeclared"
+  assert_contains "$OUT" "UNDECLARED DRIFT" "sentinel does not cover a real difference"
+  pass "audit: real drift under the sentinel is undeclared drift (exit 1)"
+}
+
+test_sentinel_beside_real_bullet_is_not_collapsed() {
+  local sk
+  sk=$(fresh_case sentinel_plus)
+  # The sentinel only means "none" when it is the section's ONLY bullet; beside a
+  # real bullet both are ordinary declarations, stale here over a clean tree.
+  write_adaptation "$sk" "$ATTR" <<<$'- no current deviations\n- keep our stricter opening line'
+  audit_case sentinel_plus
+  expect_code 1 "$RC" "sentinel beside another bullet is not the empty sentinel"
+  assert_contains "$OUT" "STALE DEVIATIONS" "both bullets are real declarations over no diff"
+  assert_contains "$OUT" "no current deviations" "the non-collapsed sentinel bullet is shown"
+  pass "audit: the sentinel collapses only when it is the sole bullet"
+}
+
 test_variant_heading_is_not_the_ledger() {
   local sk
   sk=$(fresh_case variant_heading)
@@ -261,6 +302,9 @@ test_undeclared_removed
 test_stale_bullet
 test_mixed_presents_both_sides
 test_placeholder_bullet_is_not_a_deviation
+test_sentinel_no_deviations_is_clean
+test_sentinel_with_drift_is_undeclared
+test_sentinel_beside_real_bullet_is_not_collapsed
 test_variant_heading_is_not_the_ledger
 test_quiet_predicate
 test_fetch_failure_fails_loudly

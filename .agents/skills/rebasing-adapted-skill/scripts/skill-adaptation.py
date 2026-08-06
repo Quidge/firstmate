@@ -34,6 +34,11 @@ EXIT_BAD_PATH = 128
 _ADAPTATION_NAME = "ADAPTATION.md"
 _SKILL_NAME = "SKILL.md"
 
+# The literal ``## Deviations`` bullet a verbatim vendor uses to declare zero
+# intentional differences. When it is the section's only bullet it means "no
+# deviations" - the same as an empty section - while staying human-readable.
+_NO_DEVIATIONS_SENTINEL = "no current deviations"
+
 # Environment override: read pinned base files from a local cache tree instead
 # of the network, so an audit runs deterministically and air-gapped. Layout:
 # <dir>/<owner>/<repo>/<sha>/<path>/<relpath...>. Used by the offline tests.
@@ -93,6 +98,11 @@ What audit does (and does not) decide:
       difference is uncovered (the next rebase would silently revert it);
     - stale deviations: deviations are declared but NO difference exists, so
       every bullet maps to nothing.
+  A ## Deviations section whose only bullet is the literal line
+  "- no current deviations" is the sentinel a verbatim vendor uses to declare
+  zero intentional differences. It reads as no deviations (never a stale
+  bullet), so a byte-for-byte vendor audits clean while keeping that
+  human-readable line instead of an empty section.
   When both differences and deviations are present, the script cannot prove
   which covers which, so it presents both sides and exits 0; confirming that
   each difference has a covering bullet and each bullet a live difference is the
@@ -280,8 +290,8 @@ def load_attributions(skill_dir: Path) -> list[Attribution]:
     return [parse_attribution(url) for url in urls]  # type: ignore[union-attr]
 
 
-def parse_deviation_bullets(body: str) -> list[str]:
-    """Return the ``## Deviations`` bullet texts, minus angle-bracket stubs.
+def _collect_deviation_bullets(body: str) -> list[str]:
+    """Return the raw ``## Deviations`` bullet texts, minus angle-bracket stubs.
 
     A stub bullet like ``- <describe the difference>`` is the unedited template
     placeholder, not a real declaration, so it does not count as a deviation.
@@ -308,11 +318,48 @@ def parse_deviation_bullets(body: str) -> list[str]:
     return bullets
 
 
-def read_deviation_bullets(skill_dir: Path) -> list[str]:
-    """Read ``## Deviations`` bullets from a skill directory's ADAPTATION.md."""
+def is_no_deviations_sentinel(bullets: Sequence[str]) -> bool:
+    """Whether ``bullets`` is exactly the "no deviations" sentinel.
+
+    A ``## Deviations`` section whose only bullet is the literal line
+    ``- no current deviations`` declares that the skill is a verbatim vendor with
+    zero intentional differences. It is kept as a human-readable line rather than
+    an empty section, but it means the same thing: no deviations to protect.
+    """
+    return list(bullets) == [_NO_DEVIATIONS_SENTINEL]
+
+
+def parse_deviation_bullets(body: str) -> list[str]:
+    """Return the declared ``## Deviations`` bullets, or ``[]`` for none.
+
+    Two forms declare zero deviations, both collapsing to an empty list: the
+    unedited angle-bracket placeholder, and the sole ``- no current deviations``
+    sentinel (see :func:`is_no_deviations_sentinel`).
+    """
+    bullets = _collect_deviation_bullets(body)
+    if is_no_deviations_sentinel(bullets):
+        return []
+    return bullets
+
+
+def read_deviation_ledger(skill_dir: Path) -> tuple[list[str], bool]:
+    """Read a skill's ``## Deviations`` as ``(declared_bullets, is_sentinel)``.
+
+    ``declared_bullets`` is empty when zero deviations are declared, and the
+    boolean records whether that emptiness came from the ``- no current
+    deviations`` sentinel so callers can echo the human-readable line.
+    """
     text = (skill_dir / _ADAPTATION_NAME).read_text(encoding="utf-8")
     _front, body = split_front_matter(text)
-    return parse_deviation_bullets(body)
+    raw = _collect_deviation_bullets(body)
+    sentinel = is_no_deviations_sentinel(raw)
+    return ([] if sentinel else raw), sentinel
+
+
+def read_deviation_bullets(skill_dir: Path) -> list[str]:
+    """Read ``## Deviations`` bullets from a skill directory's ADAPTATION.md."""
+    bullets, _sentinel = read_deviation_ledger(skill_dir)
+    return bullets
 
 
 def _read_base_from_cache(
@@ -445,6 +492,7 @@ class AuditResult(NamedTuple):
 
     drift: list[Drift]
     bullets: list[str]
+    no_deviations_sentinel: bool = False
 
     @property
     def undeclared_drift(self) -> list[Drift]:
@@ -468,8 +516,10 @@ def audit_skill_dir(skill_dir: Path) -> AuditResult:
     for attribution in load_attributions(skill_dir):
         base_files = fetch_base_files(attribution)
         drift.extend(compute_drift(attribution, base_files, skill_dir))
-    bullets = read_deviation_bullets(skill_dir)
-    return AuditResult(drift=sorted(drift), bullets=bullets)
+    bullets, sentinel = read_deviation_ledger(skill_dir)
+    return AuditResult(
+        drift=sorted(drift), bullets=bullets, no_deviations_sentinel=sentinel
+    )
 
 
 def _render_audit_report(skill_dir: Path, result: AuditResult) -> list[str]:
@@ -488,6 +538,9 @@ def _render_audit_report(skill_dir: Path, result: AuditResult) -> list[str]:
     lines.append("declared deviations (## Deviations):")
     if result.bullets:
         lines.extend(f"  - {b}" for b in result.bullets)
+    elif result.no_deviations_sentinel:
+        lines.append(f"  - {_NO_DEVIATIONS_SENTINEL}")
+        lines.append("  (sentinel: declares zero deviations - treated as match-upstream)")
     else:
         lines.append("  none")
     lines.append("")
