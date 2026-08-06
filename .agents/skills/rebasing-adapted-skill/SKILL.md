@@ -17,7 +17,7 @@ Provenance lives only in that directory's sibling `ADAPTATION.md`, never in `SKI
 Two parts carry it:
 
 - The front-matter `attributions` **pin** each upstream skill directory to a GitHub tree URL at a full commit SHA.
-- The `## Deviations` body lists each intentional difference from upstream as one natural-language bullet, read as merge **policy**: keep what a bullet protects, and where a bullet is silent, match upstream.
+- The `## Deviations` body lists each intentional difference on an upstream-present path as one natural-language bullet, read as merge **policy**: keep what a bullet protects, and where a bullet is silent, match upstream.
   It is a policy ledger, not a changelog, so it never chronicles the upstream changes a rebase absorbs.
 
 Scaffold pins, validate a directory, or audit it with `scripts/skill-adaptation.py` (read its `--help` for exact commands and exit codes).
@@ -30,7 +30,8 @@ Run this on its own to answer "does my vendored skill still match its declared d
 scripts/skill-adaptation.py audit <skill-dir>
 ```
 
-Audit fetches each pinned base and presents two sides for you to correlate: the deterministic `ours - base` **differences** per path, and the declared `## Deviations` bullets.
+Audit fetches each pinned base and presents two sides for you to correlate: the deterministic `ours - base` **differences** for paths present in that base, and the declared `## Deviations` bullets.
+Those differences include locally modified and removed base files; local-only additions stay local across a rebase and are outside audit.
 The script does not match one to the other; you do.
 Correlate them against the two rot modes:
 
@@ -104,7 +105,7 @@ Write the approved file changes into the target skill directory, and only those.
 Rewrite each **moved** attribution's tree URL to its new commit SHA, same owner, repo, and path.
 Leave skipped attributions untouched.
 
-Edit `## Deviations` only when the set of intentional differences actually changed - a difference added, removed, or reworded.
+Edit `## Deviations` only when the set of intentional differences on upstream-present paths actually changed - a difference added, removed, or reworded.
 An absorbed upstream change leaves the ledger alone.
 
 Re-run `validate-skill-dir` and **Audit**, and confirm both are clean.

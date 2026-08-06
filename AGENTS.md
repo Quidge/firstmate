@@ -514,7 +514,7 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `fmx-respond` - load on an `x-mention <request_id>` `check:` wake to handle the mention, on an `x-mode-error ...` `check:` wake to report the X-mode configuration blocker, on a `public-followup ...` `check:` wake or a startup-surfaced public commitment, and on any milestone or terminal wake for an X-mode-linked task before posting its completion follow-up; relevant only when X mode is on.
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
-- `rebasing-adapted-skill` - load before rebasing a vendored (upstream-tracked) skill onto a newer upstream tip, or auditing whether its declared deviations are still honest; the skill and its colocated `scripts/skill-adaptation.py` own the pin format, the read-only audit, and the agent-driven 3-way merge.
+- `rebasing-adapted-skill` - load before rebasing a vendored (upstream-tracked) skill onto a newer upstream tip, or auditing whether its declared deviations are still honest; the skill owns the rebase workflow, and its colocated `scripts/skill-adaptation.py` owns pin validation and audit mechanics.
 
 ## 14. X mode
 
