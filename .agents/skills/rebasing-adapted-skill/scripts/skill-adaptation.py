@@ -320,16 +320,29 @@ def _read_base_from_cache(
     attribution: Attribution,
 ) -> dict[str, bytes]:
     """Read a pinned base subtree from a local cache directory."""
-    root = base_dir / attribution.owner / attribution.repo / attribution.sha
-    root = root / urllib.parse.unquote(attribution.path)
-    if not root.is_dir():
-        msg = f"no cached base tree at {root}"
-        raise FetchError(msg)
-    files: dict[str, bytes] = {}
-    for path in sorted(root.rglob("*")):
-        if path.is_file():
-            files[path.relative_to(root).as_posix()] = path.read_bytes()
-    return files
+    try:
+        sha_root = (
+            base_dir / attribution.owner / attribution.repo / attribution.sha
+        ).resolve()
+        decoded_path = Path(urllib.parse.unquote(attribution.path))
+        if decoded_path.is_absolute() or ".." in decoded_path.parts:
+            msg = f"invalid cached base path for {attribution.url}"
+            raise FetchError(msg)
+        root = (sha_root / decoded_path).resolve()
+        if not root.is_relative_to(sha_root):
+            msg = f"cached base path escapes SHA root for {attribution.url}"
+            raise FetchError(msg)
+        if not root.is_dir():
+            msg = f"no cached base tree at {root}"
+            raise FetchError(msg)
+        files: dict[str, bytes] = {}
+        for path in sorted(root.rglob("*")):
+            if path.is_file():
+                files[path.relative_to(root).as_posix()] = path.read_bytes()
+        return files
+    except OSError as exc:
+        msg = f"could not read cached base for {attribution.url}: {exc}"
+        raise FetchError(msg) from exc
 
 
 def _http_get(url: str, *, accept: str) -> bytes:

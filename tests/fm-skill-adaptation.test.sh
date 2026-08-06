@@ -192,6 +192,20 @@ test_skill_less_base_fails_loudly() {
   pass "audit: a SKILL.md-less base fails loudly (exit 3), never clean"
 }
 
+test_cache_path_escape_fails_loudly() {
+  local sk outside escaped_attr
+  sk=$(fresh_case cache_escape)
+  outside="$TMP_ROOT/cache_escape/base/org/repo/outside"
+  mkdir -p "$outside"
+  printf 'upstream line\n' >"$outside/SKILL.md"
+  escaped_attr="https://github.com/org/repo/tree/$SHA/skills/%2E%2E/%2E%2E/outside"
+  write_adaptation "$sk" "$escaped_attr" </dev/null
+  audit_case cache_escape
+  expect_code 3 "$RC" "decoded cache path escape returns the dedicated fetch code"
+  assert_contains "$OUT" "invalid cached base path" "cache escape is rejected explicitly"
+  pass "audit: decoded attribution paths cannot escape the SHA cache root"
+}
+
 test_multi_attribution_drift() {
   local sk base2
   sk=$(fresh_case multi)
@@ -251,6 +265,7 @@ test_variant_heading_is_not_the_ledger
 test_quiet_predicate
 test_fetch_failure_fails_loudly
 test_skill_less_base_fails_loudly
+test_cache_path_escape_fails_loudly
 test_multi_attribution_drift
 test_hard_errors
 test_validate_passes_on_the_new_skill_dir
