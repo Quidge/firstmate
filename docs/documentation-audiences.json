@@ -197,6 +197,18 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/writing-for-agents/ADAPTATION.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/writing-for-agents/SKILL-MECHANICS.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/writing-for-agents/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "AGENTS.md",
       "audience": "agent-runtime"
     },

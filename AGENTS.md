@@ -515,6 +515,7 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
 - `rebasing-adapted-skill` - load before rebasing a vendored (upstream-tracked) skill onto a newer upstream tip, or auditing whether its declared deviations are still honest; the skill owns the rebase workflow, and its colocated `scripts/skill-adaptation.py` owns pin validation and audit mechanics.
+- `writing-for-agents` - load before creating or editing a skill, or modifying `AGENTS.md` or `CLAUDE.md`.
 
 ## 14. X mode
 
