@@ -19,6 +19,8 @@ Two parts carry it:
 - The front-matter `attributions` **pin** each upstream skill directory to a GitHub tree URL at a full commit SHA.
 - The `## Deviations` body lists each intentional difference on an upstream-present path as one natural-language bullet, read as merge **policy**: keep what a bullet protects, and where a bullet is silent, match upstream.
   It is a policy ledger, not a changelog, so it never chronicles the upstream changes a rebase absorbs.
+  A verbatim vendor with no intentional differences declares that with the single sentinel bullet `- no current deviations`.
+  Only that exact physical line, with no other nonblank section content, means the same as an empty section - zero deviations - so a byte-for-byte vendor audits clean while keeping that human-readable line.
 
 Scaffold pins, validate a directory, or audit it with `scripts/skill-adaptation.py` (read its `--help` for exact commands and exit codes).
 
