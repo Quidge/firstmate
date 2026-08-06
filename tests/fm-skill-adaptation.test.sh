@@ -162,7 +162,7 @@ test_sentinel_with_drift_is_undeclared() {
 }
 
 test_sentinel_beside_real_bullet_is_not_collapsed() {
-  local sk
+  local sk stubbed
   sk=$(fresh_case sentinel_plus)
   # The sentinel only means "none" when it is the section's ONLY bullet; beside a
   # real bullet both are ordinary declarations, stale here over a clean tree.
@@ -171,7 +171,35 @@ test_sentinel_beside_real_bullet_is_not_collapsed() {
   expect_code 1 "$RC" "sentinel beside another bullet is not the empty sentinel"
   assert_contains "$OUT" "STALE DEVIATIONS" "both bullets are real declarations over no diff"
   assert_contains "$OUT" "no current deviations" "the non-collapsed sentinel bullet is shown"
+
+  stubbed=$(fresh_case sentinel_plus_stub)
+  write_adaptation "$stubbed" "$ATTR" <<<$'- no current deviations\n- <intentional difference from upstream>'
+  audit_case sentinel_plus_stub
+  expect_code 1 "$RC" "a placeholder beside the sentinel prevents collapse"
+  assert_contains "$OUT" "STALE DEVIATIONS" "placeholder filtering cannot create a sentinel"
   pass "audit: the sentinel collapses only when it is the sole bullet"
+}
+
+test_star_sentinel_is_not_collapsed() {
+  local sk
+  sk=$(fresh_case sentinel_star)
+  write_adaptation "$sk" "$ATTR" <<<'* no current deviations'
+  audit_case sentinel_star
+  expect_code 1 "$RC" "a star-marked near-miss is an ordinary deviation"
+  assert_contains "$OUT" "STALE DEVIATIONS" "star marker does not form the literal sentinel"
+  assert_not_contains "$OUT" "sentinel:" "star near-miss is not reported as the sentinel"
+  pass "audit: a star-marked sentinel near-miss is rejected"
+}
+
+test_padded_sentinel_is_not_collapsed() {
+  local sk
+  sk=$(fresh_case sentinel_padded)
+  write_adaptation "$sk" "$ATTR" <<<' - no current deviations '
+  audit_case sentinel_padded
+  expect_code 1 "$RC" "a whitespace-padded near-miss is an ordinary deviation"
+  assert_contains "$OUT" "STALE DEVIATIONS" "padding does not form the literal sentinel"
+  assert_not_contains "$OUT" "sentinel:" "padded near-miss is not reported as the sentinel"
+  pass "audit: a whitespace-padded sentinel near-miss is rejected"
 }
 
 test_variant_heading_is_not_the_ledger() {
@@ -305,6 +333,8 @@ test_placeholder_bullet_is_not_a_deviation
 test_sentinel_no_deviations_is_clean
 test_sentinel_with_drift_is_undeclared
 test_sentinel_beside_real_bullet_is_not_collapsed
+test_star_sentinel_is_not_collapsed
+test_padded_sentinel_is_not_collapsed
 test_variant_heading_is_not_the_ledger
 test_quiet_predicate
 test_fetch_failure_fails_loudly
