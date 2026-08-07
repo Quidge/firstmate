@@ -65,13 +65,12 @@ echo "$SERVE_URL"
 
 **Port preserved** when the tool generates links on a port it chose, such as lavish:
 
-Set `PORT` to the free endpoint you chose.
+Replace `<port>` with the free endpoint you chose.
 
 ```bash
-PORT=4387
 read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
-SERVE_URL="http://$HOST:$PORT/"
-sudo tailscale serve --bg --http="$PORT" "$PORT"
+SERVE_URL="http://$HOST:<port>/"
+sudo tailscale serve --bg --http=<port> <port>
 sudo tailscale serve status
 curl -sS -o /dev/null -w '%{http_code}\n' "$SERVE_URL"      # expect 200
 echo "$SERVE_URL"
@@ -95,9 +94,10 @@ sudo tailscale serve status             # confirm HTTP port 80 is gone
 
 **Port preserved:**
 
+Replace `<port>` with the same port you served.
+
 ```bash
-PORT=4387
-sudo tailscale serve --http="$PORT" off
+sudo tailscale serve --http=<port> off
 sudo tailscale serve status             # confirm this HTTP port is gone
 ```
 
