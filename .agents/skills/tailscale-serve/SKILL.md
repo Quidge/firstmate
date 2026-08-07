@@ -46,7 +46,7 @@ ss -ltn | grep ":<port>"                # Linux; expect 127.0.0.1:<port>
 lsof -nP -iTCP:<port> -sTCP:LISTEN      # macOS equivalent
 ```
 
-`serve` needs root: without it the CLI prints `sending serve config: Access denied: serve config denied` and repeats your command with `sudo`.
+If the CLI prints `sending serve config: Access denied: serve config denied`, rerun the mutating command it shows with `sudo`.
 
 ## 3. Serve, verify, and hand over
 
