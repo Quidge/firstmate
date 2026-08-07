@@ -88,7 +88,7 @@ This step is part of the task, not cleanup you get to skip.
 ```bash
 sudo tailscale serve status                 # see what exists before removing anything
 sudo tailscale serve --http=80 off          # targeted: the original flags, not the target
-sudo tailscale serve status                 # expect: No serve config
+sudo tailscale serve status                 # Confirm this session's protocol and port are absent.
 ```
 
 `off` matches on the flags you originally passed, so `--http=8787 off` removes only that proxy and leaves others running.
