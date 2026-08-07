@@ -22,10 +22,15 @@ echo "host=$HOST certs=$CERTS"
 
 `certs=0` means this tailnet cannot issue TLS certificates, so serve over plain HTTP with `--http=<port>`.
 That is the common case, and skipping this check is expensive: `--https` is serve's default mode, and with no certificates available it blocks on certificate provisioning and prints nothing at all, so it reads as a wedged command rather than an error.
-`sudo tailscale cert "$HOST"` names the cause outright if you need to confirm it.
+`sudo tailscale cert "$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')"` names the cause outright if you need to confirm it.
 
 `DNSName` carries a trailing dot, so strip it before building a URL.
-Without `jq`, use `tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))"`.
+Without `jq`, use:
+
+```bash
+read -r HOST CERTS < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+echo "host=$HOST certs=$CERTS"
+```
 
 ## 2. Claim a free endpoint
 
@@ -45,39 +50,43 @@ lsof -nP -iTCP:<port> -sTCP:LISTEN      # macOS equivalent
 
 `serve` needs root: without it the CLI prints `sending serve config: Access denied: serve config denied` and repeats your command with `sudo`.
 
-## 3. Serve it
+## 3. Serve, verify, and hand over
 
 Pick the form by whether the tool builds its own links on a fixed port.
 
 **Clean URL** for a plain web app:
 
 ```bash
+HOST=$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
 SERVE_URL="http://$HOST/"
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
+sudo tailscale serve status
+curl -sS -o /dev/null -w '%{http_code}\n' "$SERVE_URL"      # expect 200
+echo "$SERVE_URL"
 ```
 
 **Port preserved** when the tool generates links on a port it chose, such as lavish:
 
+Set `PORT` to the free endpoint you chose.
+
 ```bash
-SERVE_URL="http://$HOST:<port>/"
-sudo tailscale serve --bg --http=<port> <port>
+PORT=4387
+HOST=$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
+SERVE_URL="http://$HOST:$PORT/"
+sudo tailscale serve --bg --http="$PORT" "$PORT"
+sudo tailscale serve status
+curl -sS -o /dev/null -w '%{http_code}\n' "$SERVE_URL"      # expect 200
+echo "$SERVE_URL"
 ```
 
 A bare port as the target resolves to `http://127.0.0.1:<port>`.
-`--bg` backgrounds it and persists the config, which is what makes step 5 mandatory.
+`--bg` backgrounds it and persists the config, which is what makes step 4 mandatory.
 
-## 4. Verify, then hand over
-
-```bash
-sudo tailscale serve status
-curl -sS -o /dev/null -w '%{http_code}\n' "$SERVE_URL"      # expect 200
-```
-
-Give the person `$SERVE_URL` in full.
+Give the person the printed URL in full.
 Test the fully-qualified name rather than the short MagicDNS name that `serve status` also advertises, since the short form may not resolve from the serving machine even while it works elsewhere.
 If they still cannot open it, confirm their device appears in `tailscale status`.
 
-## 5. Tear it down
+## 4. Tear it down
 
 ```bash
 sudo tailscale serve --http=80 off      # the flags you originally passed, not the target
