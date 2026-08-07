@@ -15,7 +15,7 @@ Every serve is session-scoped: the config outlives your shell and survives a Tai
 This is the one check that separates a working serve from a command that appears to hang:
 
 ```bash
-read -r HOST CERTS < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+read -r HOST CERTS < <(tailscale status --json | uv run python -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 echo "host=$HOST certs=$CERTS"
 ```
 
@@ -24,7 +24,7 @@ That is the common case, and skipping this check is expensive: `--https` is serv
 If you need to confirm it, this names the cause outright:
 
 ```bash
-read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+read -r HOST _ < <(tailscale status --json | uv run python -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 sudo tailscale cert "$HOST"
 ```
 
@@ -55,7 +55,7 @@ Pick the form by whether the tool builds its own links on a fixed port.
 **Clean URL** for a plain web app:
 
 ```bash
-read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+read -r HOST _ < <(tailscale status --json | uv run python -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 SERVE_URL="http://$HOST/"
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
 sudo tailscale serve status
@@ -68,7 +68,7 @@ echo "$SERVE_URL"
 Replace `<port>` with the free endpoint you chose.
 
 ```bash
-read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+read -r HOST _ < <(tailscale status --json | uv run python -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 SERVE_URL="http://$HOST:<port>/"
 sudo tailscale serve --bg --http=<port> <port>
 sudo tailscale serve status
@@ -143,7 +143,7 @@ LAVISH_AXI_LINK_HOST=myrmex.taila827d7.ts.net \
 **A Django dev server** stays on loopback and lets `serve` do the bridging:
 
 ```bash
-python manage.py runserver 127.0.0.1:8000
+uv run python manage.py runserver 127.0.0.1:8000
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
 # ALLOWED_HOSTS includes myrmex.taila827d7.ts.net, and any PUBLIC_ORIGIN-style setting uses http://
 ```
