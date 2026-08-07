@@ -15,22 +15,20 @@ Every serve is session-scoped: the config outlives your shell and survives a Tai
 This is the one check that separates a working serve from a command that appears to hang:
 
 ```bash
-HOST=$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
-CERTS=$(tailscale status --json | jq -r '(.CertDomains // []) | length')
+read -r HOST CERTS < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 echo "host=$HOST certs=$CERTS"
 ```
 
 `certs=0` means this tailnet cannot issue TLS certificates, so serve over plain HTTP with `--http=<port>`.
 That is the common case, and skipping this check is expensive: `--https` is serve's default mode, and with no certificates available it blocks on certificate provisioning and prints nothing at all, so it reads as a wedged command rather than an error.
-`sudo tailscale cert "$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')"` names the cause outright if you need to confirm it.
-
-`DNSName` carries a trailing dot, so strip it before building a URL.
-Without `jq`, use:
+If you need to confirm it, this names the cause outright:
 
 ```bash
-read -r HOST CERTS < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
-echo "host=$HOST certs=$CERTS"
+read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
+sudo tailscale cert "$HOST"
 ```
+
+`DNSName` carries a trailing dot, so strip it before building a URL.
 
 ## 2. Claim a free endpoint
 
@@ -57,7 +55,7 @@ Pick the form by whether the tool builds its own links on a fixed port.
 **Clean URL** for a plain web app:
 
 ```bash
-HOST=$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
+read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 SERVE_URL="http://$HOST/"
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
 sudo tailscale serve status
@@ -71,7 +69,7 @@ Set `PORT` to the free endpoint you chose.
 
 ```bash
 PORT=4387
-HOST=$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')
+read -r HOST _ < <(tailscale status --json | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['Self']['DNSName'].rstrip('.'), len(d.get('CertDomains') or []))")
 SERVE_URL="http://$HOST:$PORT/"
 sudo tailscale serve --bg --http="$PORT" "$PORT"
 sudo tailscale serve status
@@ -88,9 +86,19 @@ If they still cannot open it, confirm their device appears in `tailscale status`
 
 ## 4. Tear it down
 
+**Clean URL:**
+
 ```bash
-sudo tailscale serve --http=80 off      # the flags you originally passed, not the target
-sudo tailscale serve status             # confirm your protocol and port are gone
+sudo tailscale serve --http=80 off
+sudo tailscale serve status             # confirm HTTP port 80 is gone
+```
+
+**Port preserved:**
+
+```bash
+PORT=4387
+sudo tailscale serve --http="$PORT" off
+sudo tailscale serve status             # confirm this HTTP port is gone
 ```
 
 Other serves may legitimately remain, so check that yours is absent rather than expecting `No serve config`.
