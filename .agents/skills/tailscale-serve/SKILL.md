@@ -39,6 +39,14 @@ lsof -nP -iTCP:<port> -sTCP:LISTEN                # macOS equivalent
 `serve` needs root.
 Without it the CLI prints `sending serve config: Access denied: serve config denied` and repeats your command with `sudo`.
 
+Choose the HTTP port you intend to publish, then inspect the existing serve configuration before claiming it:
+
+```bash
+sudo tailscale serve status
+```
+
+If the intended HTTP port is already listed, choose a different port or stop.
+
 ## 2. Serve it
 
 Two forms.
@@ -47,6 +55,7 @@ Pick by whether the tool generates its own links on a fixed port.
 **Clean URL, no port** - use this for a plain web app:
 
 ```bash
+SERVE_URL="http://$HOST/"
 sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
 # -> http://<host>/
 ```
@@ -54,6 +63,7 @@ sudo tailscale serve --bg --http=80 http://127.0.0.1:8000
 **Port preserved** - required when the tool builds links on a port it chose, such as lavish:
 
 ```bash
+SERVE_URL="http://$HOST:<port>/"
 sudo tailscale serve --bg --http=<port> <port>
 # -> http://<host>:<port>/
 ```
@@ -65,7 +75,7 @@ A bare port as the target resolves to `http://127.0.0.1:<port>`.
 
 ```bash
 sudo tailscale serve status
-curl -sS -o /dev/null -w '%{http_code}\n' "http://$HOST/"       # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' "$SERVE_URL"       # expect 200
 ```
 
 Give the person the full URL.
@@ -95,8 +105,9 @@ Prefer targeted `off` when you know your own port, so a serve someone else stood
   For lavish specifically, `LAVISH_AXI_HOST=0.0.0.0` makes it serve arbitrary local files.
 - **Session-scoped only.**
   Remove the serve when the work is done rather than persisting it or writing it into machine configuration.
-- **Look before `reset`.**
-  Print `serve status` first, because `reset` destroys serves this session did not create.
+- **Look before changing serve config.**
+  Print `serve status` before claiming an endpoint or using `reset`.
+  Reusing an occupied protocol and port replaces its target, while `reset` destroys every serve on the node.
 
 ## Host allowlists: the 403 trap
 
@@ -155,6 +166,6 @@ Add the origin to `CSRF_TRUSTED_ORIGINS` for Django-style apps at that point, be
 | Command produces no output and never returns | `--https` default mode with no tailnet certificates | Interrupt it, use `--http=<port>` |
 | `Access denied: serve config denied` | Not root | Prefix `sudo` |
 | `403 forbidden host` or `DisallowedHost` | App host allowlist lacks the tailnet name | Add the host, and `host:port` on a non-standard port |
-| Reachable from this machine, not from a phone | Testing loopback rather than the tailnet URL, or the device is not on the tailnet | Fetch the `<host>` URL; confirm the device in `tailscale status` |
+| Reachable from this machine, not from a phone | Testing loopback or the wrong published port, or the device is not on the tailnet | Fetch `$SERVE_URL`; confirm the device in `tailscale status` |
 | Short name fails, fully-qualified name works | Search domain not applied locally | Use the fully-qualified name |
 | URL still resolves after the work is done | Serve config persists by design | `sudo tailscale serve --http=<port> off` |
