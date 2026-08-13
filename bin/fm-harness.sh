@@ -87,11 +87,6 @@ detect_own() {
       *opencode*) echo opencode; return ;;
       *grok*) echo grok; return ;;
       kimi) echo kimi; return ;;
-      # cursor-agent's launcher execs node under `exec -a "$0"`, so the command
-      # name a crew ancestor exposes is the cursor-agent basename. No verified
-      # env marker is exported to child/tool processes (the wrapper sets
-      # CURSOR_INVOKED_AS only in its own process), so detection is ancestry-only.
-      *cursor-agent*) echo cursor; return ;;
       # muse's installed launcher ~/.local/bin/muse execs ~/.local/bin/muse-bin-<version>
       # (verified in the published launcher, muse 0.1.0-R708.1), so the live process
       # name carries the version and CHANGES on every auto-update. Match the stable
@@ -108,7 +103,6 @@ detect_own() {
           *codex*) echo codex; return ;;
           *opencode*) echo opencode; return ;;
           *grok*) echo grok; return ;;
-          *cursor-agent*) echo cursor; return ;;
           *" pi "*|*/pi) echo pi; return ;;
         esac ;;
     esac
