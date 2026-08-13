@@ -257,6 +257,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/chrome-devtools-axi-process-leak.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/cmux-backend.md",
       "audience": "operator-current"
     },
