@@ -1,28 +1,181 @@
 #!/usr/bin/env bash
-# Behavior tests for the verified cursor-agent (Cursor Composer) crewmate adapter:
-# launch template, the guarded global user hook + per-task registry, the semantic
-# busy lifecycle its beforeSubmitPrompt/stop hooks drive, the stop-double-fire
-# dedupe, the per-task commit-msg hook that strips cursor's agent trailer (wired
-# via env-injected core.hooksPath, no cursor-config edit), teardown cleanup,
-# detection, and session-lock holder recognition.
+# tests/fm-cursor-harness.test.sh - the portable regression for the Cursor
+# Agent CLI crewmate/scout adapter.
+#
+# Cursor's identity, liveness, and busy checks are HARNESS-DEPENDENT: their
+# verdicts come from what the vendor emits (a process name, an env marker, a
+# transcript record). This suite pins the LOGIC with real processes, real
+# symlink trees, and real transcript files and NO cursor installed, so CI
+# enforces it everywhere; the live-harness guard in
+# tests/fm-harness-liveness-drift-live-e2e.test.sh is what catches vendor drift
+# against a real cursor-agent. Neither replaces the other.
+#
+# The load-bearing contracts:
+#   1. `agent` and `node` are far too generic to trust by name. Cursor identity
+#      requires Cursor's own name or install tree in the path or argv[0].
+#   2. An unrelated `node`/`agent` pane classifies `other`, which the liveness
+#      callers fold into `ambiguous` - NEVER `dead`.
+#   3. Cursor's env marker outranks an inherited CLAUDECODE, because cursor does
+#      not clear it and whichever marker is tested first wins.
+#   4. The transcript fold brackets a turn: a trailing turn_ended is idle, a
+#      later role:user is busy, and an unresolvable binding is unknown.
+#   5. Cursor is a crewmate/scout adapter only and refuses a secondmate launch.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# shellcheck source=/dev/null
+# shellcheck source=bin/fm-cursor-lib.sh
+. "$ROOT/bin/fm-cursor-lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh
 . "$ROOT/bin/fm-busy-lib.sh"
 
-SPAWN="$ROOT/bin/fm-spawn.sh"
-TEARDOWN="$ROOT/bin/fm-teardown.sh"
-CURSOR_HOOK="$ROOT/bin/fm-cursor-turnend-hook.sh"
+HARNESS="$ROOT/bin/fm-harness.sh"
 TMP_ROOT=$(fm_test_tmproot fm-cursor-harness)
-PYTHON_BIN=$(command -v python3) || fail "test needs python3"
-PYTHON_BIN_DIR=$(dirname "$PYTHON_BIN")
-JQ_BIN=$(command -v jq) || fail "test needs jq"
-BASE_PATH=${FM_TEST_BASE_PATH:-$PYTHON_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
+trap 'rm -rf "$TMP_ROOT"' EXIT
 
-make_spawn_fakebin() {
+# A fake cursor install tree with BOTH installed names, shaped exactly like the
+# real one: ~/.local/share/cursor-agent/versions/<version>/cursor-agent with
+# `cursor-agent` and the legacy `agent` alias symlinked at it.
+make_cursor_tree() {  # <root> -> echoes <bindir>
+  local root=$1 ver
+  ver="$root/share/cursor-agent/versions/2026.08.11-e8db854"
+  mkdir -p "$ver" "$root/bin"
+  printf '#!/bin/sh\necho "Start the Cursor Agent"\n' > "$ver/cursor-agent"
+  chmod +x "$ver/cursor-agent"
+  ln -sf "$ver/cursor-agent" "$root/bin/cursor-agent"
+  ln -sf "$ver/cursor-agent" "$root/bin/agent"
+  printf '%s' "$root/bin"
+}
+
+# --- 1. Process identity, against REAL processes ----------------------------
+
+test_identity_accepts_cursor_shapes_rejects_lookalikes() {
+  local tree bin real_node_pid impostor_dir out
+  tree="$TMP_ROOT/tree1"; bin=$(make_cursor_tree "$tree")
+
+  # Positive: the two real shapes measured on a live pane. tmux reports the
+  # pane command as a bare `node` while `ps -o comm=` carries the install path,
+  # so BOTH must identify, and neither field may be load-bearing alone.
+  fm_cursor_process_matches node '' "$bin/cursor-agent" \
+    || fail "tmux's node + cursor-agent argv[0] must identify as cursor"
+  fm_cursor_process_matches "$bin/cursor-agent" '' '' \
+    || fail "ps's cursor-agent install path must identify as cursor"
+  fm_cursor_process_matches cursor-agent '' '' \
+    || fail "a bare cursor-agent command name must identify as cursor"
+  # The legacy alias identifies only THROUGH the install tree it resolves into.
+  fm_cursor_process_matches agent '' "$bin/agent" \
+    || fail "the legacy agent alias resolving into cursor's tree must identify"
+
+  # Negative: a REAL unrelated node process, and a REAL executable named agent.
+  impostor_dir="$TMP_ROOT/impostor"; mkdir -p "$impostor_dir"
+  printf '#!/bin/sh\nsleep 30\n' > "$impostor_dir/agent"; chmod +x "$impostor_dir/agent"
+  "$impostor_dir/agent" & local impostor_pid=$!
+  if command -v node >/dev/null 2>&1; then
+    node -e 'setTimeout(function(){}, 30000)' & real_node_pid=$!
+    out=$(LC_ALL=C ps -p "$real_node_pid" -o comm= 2>/dev/null || true)
+    if [ -n "$out" ]; then
+      ! fm_cursor_process_matches "$out" '' "$out" \
+        || fail "a REAL unrelated node process must not identify as cursor (comm='$out')"
+    fi
+    kill "$real_node_pid" 2>/dev/null || true
+  fi
+  out=$(LC_ALL=C ps -p "$impostor_pid" -o comm= 2>/dev/null || true)
+  if [ -n "$out" ]; then
+    ! fm_cursor_process_matches "$out" '' "$out" \
+      || fail "a REAL unrelated executable named agent must not identify (comm='$out')"
+  fi
+  kill "$impostor_pid" 2>/dev/null || true
+
+  # A path with a directory component merely named `agent/` or
+  # `cursor-agent/` is never enough.
+  ! fm_cursor_process_matches node '' /opt/agent/bin/runner \
+    || fail "an 'agent/' directory component must not identify as cursor"
+  ! fm_cursor_process_matches node '' /tmp/cursor-agent/bin/runner \
+    || fail "a cursor-agent directory outside the versioned install tree must not identify"
+  ! fm_cursor_process_matches MainThread '' '' \
+    || fail "a bare MainThread with no cursor evidence must not identify"
+  ! fm_cursor_process_matches node '' '' \
+    || fail "a node with no argv[0] evidence must not identify"
+  pass "fm_cursor_process_matches: cursor's real shapes identify; real node/agent lookalikes do not"
+}
+
+test_identity_signals_diverge() {
+  # Two independent signals carry a positive verdict: the executable NAME and
+  # the install-tree PATH. Drive them apart so neither is silently load-bearing:
+  # a cursor-named executable OUTSIDE any cursor tree, and a non-cursor-named
+  # executable INSIDE one. Both must identify.
+  local odd="$TMP_ROOT/odd" tree bin
+  mkdir -p "$odd"
+  printf '#!/bin/sh\nexit 0\n' > "$odd/cursor-agent"; chmod +x "$odd/cursor-agent"
+  fm_cursor_process_matches "$odd/cursor-agent" '' '' \
+    || fail "name signal alone (cursor-agent outside any cursor tree) must identify"
+  tree="$TMP_ROOT/tree2"; bin=$(make_cursor_tree "$tree")
+  fm_cursor_process_matches agent '' "$bin/agent" \
+    || fail "path signal alone (alias named 'agent' inside cursor's tree) must identify"
+  # And the divergence itself: these two really are different signals.
+  [ "$(basename "$odd/cursor-agent")" = cursor-agent ] \
+    || fail "name-signal fixture lost its cursor-agent basename"
+  case "/$(fm_cursor_canonical_path "$bin/agent")/" in
+    */cursor-agent/*) : ;;
+    *) fail "path-signal fixture must canonicalize into a cursor-agent tree" ;;
+  esac
+  pass "fm_cursor_process_matches: name and install-tree signals each carry a verdict alone"
+}
+
+test_verify_executable_refuses_unrelated_agent() {
+  local tree bin odd="$TMP_ROOT/verify"
+  tree="$TMP_ROOT/tree3"; bin=$(make_cursor_tree "$tree")
+  mkdir -p "$odd"
+  printf '#!/bin/sh\necho unrelated\n' > "$odd/agent"; chmod +x "$odd/agent"
+  fm_cursor_verify_executable "$bin/agent" \
+    || fail "the alias inside cursor's install tree must verify"
+  ! fm_cursor_verify_executable "$odd/agent" \
+    || fail "an unrelated executable named agent must NOT verify as cursor"
+  pass "fm_cursor_verify_executable: the legacy alias is accepted only with cursor evidence"
+}
+
+test_resolve_binary_prefers_stable_path() {
+  # The canonical path carries a version cursor replaces on its own auto-update,
+  # so resolution must print the STABLE launcher even though identity is proven
+  # through canonicalization.
+  local tree bin out
+  tree="$TMP_ROOT/tree4"; bin=$(make_cursor_tree "$tree")
+  out=$(PATH="$bin:$PATH" fm_cursor_resolve_binary) \
+    || fail "resolve must succeed when cursor-agent is on PATH"
+  [ "$out" = "$bin/cursor-agent" ] \
+    || fail "resolve must print the stable launcher, got '$out'"
+  case "$out" in *versions*) fail "resolve must not pin the versioned install path" ;; esac
+  pass "fm_cursor_resolve_binary: prints the stable launcher, not the versioned target"
+}
+
+# --- 2. tmux pane liveness ---------------------------------------------------
+
+test_tmux_classifies_cursor_pane_without_inferring_dead() {
+  local tree bin
+  tree="$TMP_ROOT/tree5"; bin=$(make_cursor_tree "$tree")
+  # shellcheck source=bin/backends/tmux.sh
+  ( FM_BACKEND_LIB_DIR="$ROOT/bin"; . "$ROOT/bin/backends/tmux.sh"
+    [ "$(fm_backend_tmux_classify_process_name node "$bin/cursor-agent")" = agent ] \
+      || fail "a cursor pane reported as node must classify agent"
+    [ "$(fm_backend_tmux_classify_process_name '' "$bin/cursor-agent")" = agent ] \
+      || fail "the argv[0]-only call must classify a cursor pane agent"
+    # The safety half: an unrelated node is `other`, and the callers turn
+    # `other` into `ambiguous`, never `dead`.
+    [ "$(fm_backend_tmux_classify_process_name node /usr/bin/node)" = other ] \
+      || fail "an unrelated node must stay 'other', never agent"
+    [ "$(fm_backend_tmux_classify_process_name agent /usr/local/bin/agent)" = other ] \
+      || fail "an unrelated agent must stay 'other', never agent"
+    # Neighbours must not regress.
+    [ "$(fm_backend_tmux_classify_process_name claude '')" = agent ] || fail "claude regressed"
+    [ "$(fm_backend_tmux_classify_process_name zsh '')" = shell ] || fail "zsh regressed"
+  ) || exit 1
+  pass "tmux liveness: a cursor pane is agent; an unrelated node/agent is other, never dead"
+}
+
+# --- 2b. Fork-critical attribution guard ------------------------------------
+
+make_cursor_spawn_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
   cat > "$fakebin/tmux" <<'SH'
@@ -37,380 +190,294 @@ case "${1:-}" in
   has-session|new-session|new-window|kill-window) exit 0 ;;
   send-keys)
     [ -n "${FM_FAKE_TEXT_LOG:-}" ] && printf '%s\n' "$*" >> "$FM_FAKE_TEXT_LOG"
-    prev=
-    for arg in "$@"; do
-      if [ "$prev" = -l ]; then printf '%s\n' "$arg" >> "$FM_FAKE_LAUNCH_LOG"; break; fi
-      prev=$arg
-    done
     exit 0
     ;;
 esac
 exit 0
 SH
-  chmod +x "$fakebin/tmux"
+  cat > "$fakebin/cursor-agent" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --list-models) printf '%s\n' 'cursor-grok-4.5-high - Cursor model'; exit 0 ;;
+  --help) printf '%s\n' 'Start the Cursor Agent'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux" "$fakebin/cursor-agent"
   fm_fake_exit0 "$fakebin" treehouse gh-axi gh
-  ln -s "$JQ_BIN" "$fakebin/jq"
   printf '%s\n' "$fakebin"
 }
 
-make_spawn_case() {  # <name> <id>
-  local name=$1 id=$2 case_dir home proj wt fakebin
-  case_dir="$TMP_ROOT/$name"
-  home="$case_dir/home"
-  proj="$case_dir/project"
-  wt="$case_dir/wt"
-  fakebin=$(make_spawn_fakebin "$case_dir/fake")
-  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$home/.cursor"
-  printf 'brief for cursor\n' > "$home/data/$id/brief.md"
+test_cursor_spawn_installs_attribution_guard() {
+  local case_dir="$TMP_ROOT/attribution" home proj wt fakebin id=cursor-attribution-z1
+  local out rc hookdir hook msg clean
+  fakebin=$(make_cursor_spawn_fakebin "$case_dir/fake")
+  home="$case_dir/home"; proj="$case_dir/project"; wt="$case_dir/wt"
+  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'cursor\n' > "$home/config/crew-harness"
-  fm_git_worktree "$proj" "$wt" "wt-$name"
+  printf 'brief for cursor\n' > "$home/data/$id/brief.md"
+  fm_git_worktree "$proj" "$wt" attribution-wt
   touch "$home/state/.last-watcher-beat"
-  : > "$case_dir/launch.log"
-  : > "$case_dir/text.log"
-  printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
-}
-
-read_spawn_record() {
-  IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR <<EOF
-$1
-EOF
-}
-
-run_spawn() {  # <case_dir> <home> <proj> <wt> <fakebin> <id> [extra spawn args...]
-  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
-  shift 6
-  HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" FM_FAKE_TEXT_LOG="$case_dir/text.log" \
-    PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness cursor --mode no-mistakes --yolo off "$@" 2>&1
-}
-
-# Feed one JSON hook payload to the installed global hook, as cursor would.
-drive_hook() {  # <home> <hook-event> <generation_id> <workspace-root> [status]
-  local home=$1 event=$2 genid=$3 root=$4 status=${5:-completed} payload
-  if [ "$event" = stop ]; then
-    payload=$(printf '{"hook_event_name":"stop","generation_id":"%s","status":"%s","workspace_roots":["%s"]}' \
-      "$genid" "$status" "$root")
-  else
-    payload=$(printf '{"hook_event_name":"%s","generation_id":"%s","workspace_roots":["%s"]}' \
-      "$event" "$genid" "$root")
-  fi
-  printf '%s' "$payload" | HOME="$home" PATH="$JQ_BIN_DIR:$BASE_PATH" \
-    bash "$home/.cursor/fm-cursor-turnend.sh"
-}
-JQ_BIN_DIR=$(dirname "$JQ_BIN")
-
-classify() { fm_busy_classify tmux fake:w cursor "$1" "$2"; }
-
-test_cursor_spawn_installs_hook_registers_token_and_neutralizes_attribution() {
-  local id rec out rc launch token meta
-  id=cursor-spawn-z1
-  rec=$(make_spawn_case spawn "$id")
-  read_spawn_record "$rec"
-  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
-    --model composer-2.5 --effort high)
+  out=$(HOME="$home" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_PROJECTS_OVERRIDE="$home/projects" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_SPAWN_NO_GUARD=1 \
+    FM_FAKE_PANE_PATH="$wt" FM_FAKE_TEXT_LOG="$case_dir/text.log" \
+    TMUX='fake,1,0' PATH="$fakebin:$PATH" \
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --harness cursor \
+      --model cursor-grok-4.5-high --mode no-mistakes --yolo off 2>&1)
   rc=$?
-  expect_code 0 "$rc" "cursor spawn should succeed: $out"
-  assert_contains "$out" "spawned $id harness=cursor" "cursor spawn did not report success"
-
-  # Launch template: --force --trust --model, positional brief, NO effort flag,
-  # NO turn-end placeholder, and cursor-agent as the last command (no trailing ;).
-  launch=$(cat "$CASE_DIR/launch.log")
-  assert_contains "$launch" "cursor-agent --force --trust --model 'composer-2.5' " \
-    "cursor launch did not use --force --trust --model: $launch"
-  assert_not_contains "$launch" "--effort" "cursor launch emitted a nonexistent effort flag"
-  assert_not_contains "$launch" "__TURNEND__" "cursor launch retained a turn-end placeholder"
-  assert_not_contains "$launch" "turn-ended" "cursor launch embedded a turn-end path"
-  case "$launch" in
-    *';') fail "cursor launch ended with a trailing command; pane would not report cursor-agent: $launch" ;;
-  esac
-
-  meta="$HOME_DIR/state/$id.meta"
-  assert_grep 'harness=cursor' "$meta" "cursor meta lost its harness"
-  assert_grep 'model=composer-2.5' "$meta" "cursor meta lost the requested model"
-  assert_grep 'effort=high' "$meta" "cursor meta did not retain the unsupported effort axis"
-
-  # Global user hook + entries for both events.
-  assert_present "$HOME_DIR/.cursor/fm-cursor-turnend.sh" "cursor hook script was not installed"
-  "$JQ_BIN" -e '.hooks.beforeSubmitPrompt[0].command | contains("fm-cursor-turnend.sh")' \
-    "$HOME_DIR/.cursor/hooks.json" >/dev/null || fail "hooks.json lacks the beforeSubmitPrompt entry"
-  "$JQ_BIN" -e '.hooks.stop[0].command | contains("fm-cursor-turnend.sh")' \
-    "$HOME_DIR/.cursor/hooks.json" >/dev/null || fail "hooks.json lacks the stop entry"
-
-  # Per-task registry token + pointer, with the turn-end path kept out of the pointer.
-  assert_grep 'token=' "$WT_DIR/.fm-cursor-turnend" "cursor pointer did not contain a token"
-  assert_no_grep "$id.turn-ended" "$WT_DIR/.fm-cursor-turnend" "cursor pointer exposed the turn-end path"
-  token=$(sed -n 's/^token=//p' "$WT_DIR/.fm-cursor-turnend")
-  assert_present "$HOME_DIR/.cursor/fm-turn-end.d/$token" "cursor registry entry was not written"
-  assert_present "$HOME_DIR/state/$id.cursor-turnend-token" "cursor state token was not recorded"
-  assert_grep "busyevent=$ROOT/bin/fm-busy-event.sh" "$HOME_DIR/.cursor/fm-turn-end.d/$token" \
-    "cursor registry entry did not record this home's fm-busy-event path"
-
-  local excl
-  excl=$(git -C "$WT_DIR" rev-parse --git-path info/exclude)
-  case "$excl" in /*) : ;; *) excl="$WT_DIR/$excl" ;; esac
-  assert_grep '.fm-cursor-turnend' "$excl" "cursor pointer was not gitignored"
-
-  # Attribution neutralization: a per-task commit-msg hook under state/, NOT the old
-  # crash-inducing project .cursor/cli.json, wired for the worker via core.hooksPath.
-  assert_absent "$WT_DIR/.cursor/cli.json" \
-    "cursor still writes the project .cursor/cli.json that crashes the launch"
-  local hookdir hook
-  # fm-spawn resolves the hook dir under the canonicalized state path (STATE_REAL),
-  # so mirror that here and match the shell-quoted value fm-spawn exports.
-  hookdir="$(cd "$HOME_DIR/state" && pwd -P)/$id.cursor-git-hooks"
+  [ "$rc" -eq 0 ] || fail "cursor spawn failed while installing attribution guard: $out"
+  hookdir="$home/state/$id.cursor-git-hooks"
   hook="$hookdir/commit-msg"
-  assert_present "$hook" "cursor commit-msg attribution hook was not installed"
-  [ -x "$hook" ] || fail "cursor commit-msg hook is not executable"
-  # The worker's git is pointed at the hook dir through the GIT_CONFIG_* env, sent
-  # before launch on the same channel as GOTMPDIR.
-  assert_grep 'export GIT_CONFIG_KEY_0=core.hooksPath' "$CASE_DIR/text.log" \
-    "cursor spawn did not wire core.hooksPath into the worker env"
-  assert_grep "GIT_CONFIG_VALUE_0='$hookdir'" "$CASE_DIR/text.log" \
-    "cursor spawn did not point core.hooksPath at the per-task hook dir"
-
-  # The hook strips only cursor's agent trailer and leaves every other line intact.
-  local msgfile
-  msgfile="$CASE_DIR/commit-msg-sample"
-  {
-    printf '%s\n\n' 'Add a feature'
-    printf '%s\n' 'Co-authored-by: Real Person <human@example.com>'
-    printf '%s\n' 'Co-authored-by: Cursor <cursoragent@cursor.com>'
-  } > "$msgfile"
-  "$hook" "$msgfile" || fail "cursor commit-msg hook exited nonzero"
-  assert_no_grep 'cursoragent@cursor.com' "$msgfile" "hook left cursor's agent trailer in the message"
-  assert_grep 'human@example.com' "$msgfile" "hook stripped a legitimate human co-author"
-  assert_grep 'Add a feature' "$msgfile" "hook mangled the commit subject"
-  # A message with no cursor trailer is passed through byte for byte.
-  local clean
-  clean="$CASE_DIR/commit-msg-clean"
-  printf '%s\n\n%s\n' 'Fix bug' 'Signed-off-by: Dev <dev@example.com>' > "$clean"
-  cp "$clean" "$clean.orig"
-  "$hook" "$clean" || fail "cursor commit-msg hook exited nonzero on a clean message"
-  cmp -s "$clean" "$clean.orig" || fail "hook altered a commit message with no cursor trailer"
-  pass "fm-spawn: cursor installs its hook, registers a task token, and neutralizes commit attribution"
+  assert_present "$hook" "cursor attribution hook was not installed"
+  [ -x "$hook" ] || fail "cursor attribution hook is not executable"
+  assert_grep 'GIT_CONFIG_KEY_0=core.hooksPath' "$case_dir/text.log" \
+    "cursor worker did not receive the attribution hook configuration"
+  msg="$case_dir/commit-msg"
+  printf '%s\n%s\n' 'Add a feature' \
+    'Co-authored-by: Cursor <cursoragent@cursor.com>' > "$msg"
+  "$hook" "$msg" || fail "cursor attribution hook returned nonzero"
+  assert_no_grep 'cursoragent@cursor.com' "$msg" \
+    "cursor attribution hook left the Cursor trailer"
+  assert_grep 'Add a feature' "$msg" \
+    "cursor attribution hook changed the commit subject"
+  assert_grep 'GIT_CONFIG_VALUE_0=' "$case_dir/text.log" \
+    "cursor worker did not receive the per-task hook path"
+  clean="$case_dir/clean-msg"
+  printf '%s\n' 'Signed-off-by: Human <human@example.com>' > "$clean"
+  cp "$clean" "$clean.before"
+  "$hook" "$clean" || fail "cursor attribution hook failed on a clean message"
+  cmp -s "$clean" "$clean.before" || fail "hook altered a message without Cursor attribution"
+  pass "fm-spawn: upstream Cursor transcript wiring retains fork attribution stripping"
 }
 
-test_cursor_hook_busy_lifecycle_and_stop_dedupe() {
-  local id rec out state token root turnend
-  id=cursor-busy-z2
-  rec=$(make_spawn_case busy "$id")
-  read_spawn_record "$rec"
-  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
-  expect_code 0 $? "cursor spawn should succeed: $out"
-  state="$HOME_DIR/state"
-  turnend="$state/$id.turn-ended"
+# --- 3. Detection ordering ---------------------------------------------------
 
-  # Seed after spawn: the launch brief is a submitted turn.
-  out=$(classify "$id" "$state")
-  [ "$out" = "busy fm-spawn" ] || fail "seed after spawn must be 'busy fm-spawn', got '$out'"
-
-  # stop closes the turn: idle cursor-hook + the turn-end notification touch.
-  rm -f "$turnend"
-  drive_hook "$HOME_DIR" stop gen-A "$WT_DIR" completed || fail "stop hook drive failed"
-  [ -f "$turnend" ] || fail "stop hook did not touch the turn-end marker"
-  out=$(classify "$id" "$state")
-  [ "$out" = "idle cursor-hook" ] || fail "stop must classify 'idle cursor-hook', got '$out'"
-
-  # beforeSubmitPrompt opens the next turn.
-  drive_hook "$HOME_DIR" beforeSubmitPrompt gen-B "$WT_DIR" || fail "beforeSubmitPrompt drive failed"
-  out=$(classify "$id" "$state")
-  [ "$out" = "busy cursor-hook" ] || fail "beforeSubmitPrompt must classify 'busy cursor-hook', got '$out'"
-
-  # Interrupt double-fire: stop fires twice for one generation (aborted, then
-  # error). The dedupe must touch the marker and apply idle exactly once.
-  rm -f "$turnend"
-  drive_hook "$HOME_DIR" stop gen-B "$WT_DIR" aborted || fail "aborted stop drive failed"
-  [ -f "$turnend" ] || fail "the aborted stop must still wake firstmate"
-  rm -f "$turnend"
-  drive_hook "$HOME_DIR" stop gen-B "$WT_DIR" error || fail "error stop drive failed"
-  [ -e "$turnend" ] && fail "the duplicate error stop for one generation was not deduped"
-  out=$(classify "$id" "$state")
-  [ "$out" = "idle cursor-hook" ] || fail "after the interrupt the task must be idle, got '$out'"
-  pass "cursor hook opens on beforeSubmitPrompt, closes on stop, and dedupes the interrupt double-fire"
+test_cursor_marker_outranks_inherited_claudecode() {
+  local out
+  # This is the exact hazard: cursor does NOT clear an inherited CLAUDECODE, so
+  # a cursor worker under a claude primary carries both markers.
+  out=$(CLAUDECODE=1 CURSOR_AGENT=1 "$HARNESS")
+  [ "$out" = cursor ] || fail "CLAUDECODE + CURSOR_AGENT must detect cursor, got '$out'"
+  out=$(CLAUDECODE=1 CURSOR_INVOKED_AS=cursor-agent "$HARNESS")
+  [ "$out" = cursor ] || fail "CLAUDECODE + CURSOR_INVOKED_AS must detect cursor, got '$out'"
+  # Both cursor markers stand alone, and neither steals a plain claude session.
+  out=$(env -u CLAUDECODE CURSOR_AGENT=1 "$HARNESS")
+  [ "$out" = cursor ] || fail "CURSOR_AGENT alone must detect cursor, got '$out'"
+  out=$(env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDECODE=1 "$HARNESS")
+  [ "$out" = claude ] || fail "CLAUDECODE alone must still detect claude, got '$out'"
+  # A CURSOR_* variable that is not the invocation identity proves nothing.
+  out=$(env -u CURSOR_AGENT CLAUDECODE=1 CURSOR_API_ENDPOINT=https://example \
+        CURSOR_INVOKED_AS=something-else "$HARNESS")
+  [ "$out" = claude ] \
+    || fail "an unrelated CURSOR_* setting must not claim the cursor identity, got '$out'"
+  pass "fm-harness.sh: cursor's marker outranks an inherited CLAUDECODE"
 }
 
-test_cursor_hook_requires_registered_workspace_token() {
-  local id rec out state token turnend evil
-  id=cursor-auth-z3
-  rec=$(make_spawn_case auth "$id")
-  read_spawn_record "$rec"
-  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
-  expect_code 0 $? "cursor spawn should succeed: $out"
-  state="$HOME_DIR/state"
-  turnend="$state/$id.turn-ended"
-  token=$(sed -n 's/^token=//p' "$WT_DIR/.fm-cursor-turnend")
-
-  # A workspace with no firstmate pointer is inert and silent.
-  evil="$CASE_DIR/evil"
-  mkdir -p "$evil"
-  rm -f "$turnend"
-  out=$(drive_hook "$HOME_DIR" stop gen-x "$evil" completed 2>&1)
-  expect_code 0 $? "cursor hook must never block a tokenless session"
-  [ -z "$out" ] || fail "cursor hook printed into a tokenless session: $out"
-  assert_absent "$turnend" "a tokenless cursor workspace touched a task marker"
-
-  # A pointer whose token is not on the first line is rejected.
-  {
-    printf '%s\n' 'ignored'
-    printf 'token=%s\n' "$token"
-  } > "$WT_DIR/.fm-cursor-turnend"
-  rm -f "$turnend"
-  drive_hook "$HOME_DIR" stop gen-y "$WT_DIR" completed
-  assert_absent "$turnend" "cursor pointer accepted a token outside the first line"
-
-  # The genuine registered pointer works.
-  printf 'token=%s\n' "$token" > "$WT_DIR/.fm-cursor-turnend"
-  rm -f "$turnend"
-  drive_hook "$HOME_DIR" stop gen-z "$WT_DIR" completed
-  assert_present "$turnend" "the registered cursor pointer did not touch the turn-end marker"
-  pass "cursor global hook fires only for a workspace holding a firstmate registry token"
+test_harness_ancestry_rejects_cursor_named_node_script() {
+  command -v node >/dev/null 2>&1 || return 0
+  local helper="$TMP_ROOT/cursor-agent-helper.js" out
+  cat > "$helper" <<'JS'
+const { spawnSync } = require('child_process');
+const env = { ...process.env };
+delete env.CURSOR_AGENT;
+delete env.CURSOR_INVOKED_AS;
+delete env.CLAUDECODE;
+delete env.PI_CODING_AGENT;
+delete env.GROK_AGENT;
+const result = spawnSync(process.argv[2], [], { encoding: 'utf8', env });
+process.stdout.write(result.stdout);
+process.stderr.write(result.stderr);
+process.exit(result.status === null ? 1 : result.status);
+JS
+  out=$(node "$helper" "$HARNESS")
+  [ "$out" != cursor ] \
+    || fail "a node script merely containing cursor-agent in its filename must not identify as cursor"
+  pass "fm-harness.sh: cursor-like node script names do not establish ancestry identity"
 }
 
-test_cursor_teardown_removes_pointer_registry_and_attribution() {
-  local id rec out token
-  id=cursor-teardown-z4
-  rec=$(make_spawn_case teardown "$id")
-  read_spawn_record "$rec"
-  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
-  expect_code 0 $? "cursor spawn should succeed before teardown: $out"
-  token=$(sed -n 's/^token=//p' "$WT_DIR/.fm-cursor-turnend")
-  # Simulate an accumulated stop-dedupe directory so teardown must clear it too.
-  mkdir -p "$HOME_DIR/.cursor/fm-turn-end.d/$token.stops/gen-A"
-  # spawn created the per-task attribution hook dir; teardown must remove it.
-  assert_present "$HOME_DIR/state/$id.cursor-git-hooks/commit-msg" \
-    "cursor attribution hook was not present before teardown"
+# --- 4. The transcript busy fold --------------------------------------------
 
-  HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
-    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    FM_SPAWN_NO_GUARD=1 PATH="$FAKEBIN_DIR:$BASE_PATH" \
-    "$TEARDOWN" "$id" --force >/dev/null 2>&1 || fail "cursor teardown failed"
-
-  assert_absent "$WT_DIR/.fm-cursor-turnend" "cursor pointer survived teardown"
-  assert_absent "$HOME_DIR/state/$id.cursor-git-hooks" "cursor attribution hook dir survived teardown"
-  assert_absent "$HOME_DIR/.cursor/fm-turn-end.d/$token" "cursor registry token survived teardown"
-  assert_absent "$HOME_DIR/.cursor/fm-turn-end.d/$token.stops" "cursor stop-dedupe dir survived teardown"
-  assert_absent "$HOME_DIR/state/$id.cursor-turnend-token" "cursor state token survived teardown"
-  pass "fm-teardown: cursor pointer, registry token, dedupe dir, and attribution hook dir are removed"
+# Build a bound cursor workspace: a project dir keyed by .workspace-trusted, a
+# conversation transcript, and the per-task sidecar fm-spawn writes.
+make_cursor_binding() {  # <case> <conversation-id> <transcript-body> -> echoes <state-dir>
+  local case_name=$1 conv=$2 body=$3 root ws proj state
+  root="$TMP_ROOT/$case_name/projects"
+  ws="$TMP_ROOT/$case_name/worktree"
+  proj="$root/some-opaque-slug-$case_name"
+  state="$TMP_ROOT/$case_name/state"
+  mkdir -p "$proj/agent-transcripts/$conv" "$ws" "$state"
+  printf '{\n  "workspacePath": "%s",\n  "trustMethod": "cli-flag"\n}\n' "$ws" \
+    > "$proj/.workspace-trusted"
+  printf '%s' "$body" > "$proj/agent-transcripts/$conv/$conv.jsonl"
+  printf 'projects_root=%s\nworkspace_root=%s\n' "$root" "$ws" > "$state/task.cursor-session"
+  printf '%s' "$state"
 }
 
-test_cursor_hook_install_is_idempotent_and_preserves_foreign_hooks() {
-  local home config count
-  home="$TMP_ROOT/install-idem"
-  config="$home/.cursor/hooks.json"
-  mkdir -p "$home/.cursor"
-  cat > "$config" <<'JSON'
-{
-  "version": 1,
-  "notifications": true,
-  "hooks": {
-    "afterFileEdit": [ { "command": ".cursor/hooks/format.sh" } ]
-  }
-}
-JSON
-  HOME="$home" "$CURSOR_HOOK" install || fail "cursor hook install refused a realistic hooks.json"
-  cp "$config" "$home/once.json"
-  HOME="$home" "$CURSOR_HOOK" install || fail "second cursor hook install failed"
-  cmp -s "$home/once.json" "$config" || fail "second cursor hook install changed hooks.json bytes"
-  count=$("$JQ_BIN" '.hooks.stop | length' "$config")
-  [ "$count" -eq 1 ] || fail "idempotent install left $count stop entries"
-  "$JQ_BIN" -e '.hooks.afterFileEdit[0].command == ".cursor/hooks/format.sh" and .notifications == true' \
-    "$config" >/dev/null || fail "install did not preserve the captain's foreign hook and keys"
+test_transcript_fold_brackets_a_turn() {
+  local state out
+  # Open turn: a role:user record with no close after it.
+  state=$(make_cursor_binding open conv-a '{"role":"user"}
+{"role":"assistant"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "busy cursor-transcript" ] || fail "an open turn must be busy, got '$out'"
 
-  HOME="$home" "$CURSOR_HOOK" remove || fail "cursor hook removal failed"
-  "$JQ_BIN" -e '.hooks.stop == null and .hooks.beforeSubmitPrompt == null' "$config" >/dev/null \
-    || fail "removal left firstmate hook entries behind"
-  "$JQ_BIN" -e '.hooks.afterFileEdit[0].command == ".cursor/hooks/format.sh"' "$config" >/dev/null \
-    || fail "removal discarded the captain's foreign hook"
-  assert_absent "$home/.cursor/fm-cursor-turnend.sh" "removal left the firstmate hook script"
-  assert_absent "$home/.cursor/fm-turn-end.d" "removal left the firstmate registry"
-  pass "cursor hook install is idempotent, preserves foreign hooks, and removal is clean"
-}
+  # Closed turn.
+  state=$(make_cursor_binding closed conv-b '{"role":"user"}
+{"role":"assistant"}
+{"type":"turn_ended","status":"success"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "idle cursor-transcript" ] || fail "a closed turn must be idle, got '$out'"
 
-test_cursor_hook_install_refuses_malformed_hooks_json() {
-  local home config out rc
-  home="$TMP_ROOT/install-malformed"
-  config="$home/.cursor/hooks.json"
-  mkdir -p "$home/.cursor"
-  printf '{"hooks": [broken\n' > "$config"
-  cp "$config" "$home/before.json"
-  rc=0
-  out=$(HOME="$home" "$CURSOR_HOOK" install 2>&1) || rc=$?
-  [ "$rc" -ne 0 ] || fail "malformed hooks.json was accepted"
-  assert_contains "$out" "not valid JSON" "malformed refusal lacked its concrete reason"
-  cmp -s "$home/before.json" "$config" || fail "malformed refusal changed hooks.json bytes"
-  assert_absent "$home/.cursor/fm-cursor-turnend.sh" "malformed refusal wrote the hook script"
-  pass "cursor hook install refuses malformed hooks.json without writing"
+  # An ABORTED close is still a close. This is the case Claude's Stop hook
+  # misses, and it is why this source is preferred over a rendered footer.
+  state=$(make_cursor_binding aborted conv-c '{"role":"user"}
+{"type":"turn_ended","status":"aborted","error":"User aborted/interrupted manually."}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "idle cursor-transcript" ] || fail "an aborted close must be idle, got '$out'"
+
+  # A NEW turn opened after a close reopens it.
+  state=$(make_cursor_binding reopened conv-d '{"role":"user"}
+{"type":"turn_ended","status":"success"}
+{"role":"user"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "busy cursor-transcript" ] || fail "a turn reopened after a close must be busy, got '$out'"
+  pass "cursor transcript fold: role:user opens a turn, turn_ended closes it, aborts included"
 }
 
-test_cursor_detection_uses_ancestry_after_markers() {
-  local dir fakebin cfg out
-  dir="$TMP_ROOT/detection"
-  fakebin=$(fm_fakebin "$dir")
-  cfg="$dir/config"
-  mkdir -p "$cfg"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-set -u
-field=
-pid=
-prev=
-for arg in "$@"; do
-  [ "$prev" = -o ] && field=$arg
-  [ "$prev" = -p ] && pid=$arg
-  prev=$arg
-done
-case "$field:$pid" in
-  comm=:4242) printf '/home/u/.local/bin/cursor-agent\n' ;;
-  comm=:*) printf '/bin/bash\n' ;;
-  ppid=:4242) printf '1\n' ;;
-  ppid=:*) printf '4242\n' ;;
-  args=:*) printf 'bash\n' ;;
-esac
-SH
-  chmod +x "$fakebin/ps"
-  out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT \
-    PATH="$fakebin:$BASE_PATH" FM_CONFIG_OVERRIDE="$cfg" "$ROOT/bin/fm-harness.sh")
-  [ "$out" = cursor ] || fail "cursor ancestry detection returned '$out'"
-  out=$(CLAUDECODE=1 PATH="$fakebin:$BASE_PATH" FM_CONFIG_OVERRIDE="$cfg" "$ROOT/bin/fm-harness.sh")
-  [ "$out" = claude ] || fail "verified env-marker precedence changed, got '$out'"
-  pass "fm-harness: cursor-agent is detected by ancestry after env-marker precedence"
+test_transcript_fold_ignores_lifecycle_tokens_in_message_text() {
+  local state out log jq_bin awk_bin no_jq_bin
+  state=$(make_cursor_binding quoted-lifecycle conv-quoted '{"role":"user","message":"literal {\"type\":\"turn_ended\"} and \"role\":\"user\""}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "busy cursor-transcript" ] \
+    || fail "lifecycle-shaped message text must not close an active turn, got '$out'"
+
+  jq_bin=$(command -v jq) || fail "jq is required to exercise Cursor's primary transcript parser"
+  [ -x "$jq_bin" ] || fail "jq must be executable"
+  state=$(make_cursor_binding malformed-close conv-malformed '{"role":"user"}
+{"type":"turn_ended",broken}
+')
+  log=$(fm_busy_cursor_transcript "$state" task) \
+    || fail "the malformed-close transcript fixture must resolve"
+  out=$(fm_busy_cursor_turn_state "$log")
+  [ "$out" = busy ] \
+    || fail "jq parser must keep an open turn busy after a malformed close, got '$out'"
+
+  awk_bin=$(command -v awk) || fail "awk is required to exercise Cursor's fallback transcript parser"
+  no_jq_bin="$TMP_ROOT/no-jq-bin"
+  mkdir -p "$no_jq_bin"
+  ln -sf "$awk_bin" "$no_jq_bin/awk"
+  out=$(PATH="$no_jq_bin" fm_busy_cursor_turn_state "$log")
+  [ "$out" = busy ] \
+    || fail "no-jq parser must keep an open turn busy after a malformed close, got '$out'"
+  pass "cursor transcript fold: malformed closes cannot settle through either parser"
 }
 
-test_cursor_session_lock_identity() {
-  local home fakebin out
-  home="$TMP_ROOT/session-lock-home"
-  fakebin=$(fm_fakebin "$TMP_ROOT/session-lock-fake")
-  mkdir -p "$home/state"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  *"comm="*) printf '%s\n' '/home/u/.local/bin/cursor-agent'; exit 0 ;;
-  *"args="*) printf '%s\n' 'cursor-agent'; exit 0 ;;
-esac
-exit 1
-SH
-  chmod +x "$fakebin/ps"
-  FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" \
-    || fail "fm-lock did not acquire from cursor ancestry"
-  printf '%s\n' "$$" > "$home/state/.lock"
-  out=$(FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" status)
-  assert_contains "$out" "lock: held by live harness pid" \
-    "fm-lock did not recognize cursor as a live holder"
-  pass "fm-lock recognizes cursor ancestry and live lock holders"
+test_transcript_fold_handles_partially_appended_records() {
+  local state out
+  state=$(make_cursor_binding closed-partial conv-partial-a '{"role":"user"}
+{"type":"turn_ended","status":"success"}
+{"role":"user"
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "unknown cursor-transcript" ] \
+    || fail "a partial record after a close must be unknown, got '$out'"
+
+  state=$(make_cursor_binding closed-complete conv-partial-b '{"role":"user"}
+{"type":"turn_ended","status":"success"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "idle cursor-transcript" ] \
+    || fail "a completed turn without trailing garbage must be idle, got '$out'"
+
+  state=$(make_cursor_binding open-partial conv-partial-c '{"role":"user"}
+{"role":"assistant"
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "busy cursor-transcript" ] \
+    || fail "a partial record after an open must remain busy, got '$out'"
+  pass "cursor transcript fold: partial appends never make an active turn idle"
 }
 
-test_cursor_spawn_installs_hook_registers_token_and_neutralizes_attribution
-test_cursor_hook_busy_lifecycle_and_stop_dedupe
-test_cursor_hook_requires_registered_workspace_token
-test_cursor_teardown_removes_pointer_registry_and_attribution
-test_cursor_hook_install_is_idempotent_and_preserves_foreign_hooks
-test_cursor_hook_install_refuses_malformed_hooks_json
-test_cursor_detection_uses_ancestry_after_markers
-test_cursor_session_lock_identity
+test_transcript_fold_is_unknown_never_idle_when_unresolvable() {
+  local state out empty_state
+  # A record-free transcript proves nothing either way.
+  state=$(make_cursor_binding norecords conv-e '{"type":"session_meta"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "unknown cursor-transcript" ] || fail "a record-free transcript must be unknown, got '$out'"
 
-echo "all fm-cursor-harness tests passed"
+  # No sidecar at all.
+  empty_state="$TMP_ROOT/nosidecar"; mkdir -p "$empty_state"
+  out=$(fm_busy_classify tmux none cursor task "$empty_state")
+  [ "$out" = "unknown cursor-transcript" ] || fail "a missing sidecar must be unknown, got '$out'"
+
+  # A sidecar pointing at a workspace no project directory claims.
+  mkdir -p "$TMP_ROOT/unclaimed/state" "$TMP_ROOT/unclaimed/projects"
+  printf 'projects_root=%s\nworkspace_root=%s\n' \
+    "$TMP_ROOT/unclaimed/projects" "$TMP_ROOT/unclaimed/nowhere" \
+    > "$TMP_ROOT/unclaimed/state/task.cursor-session"
+  out=$(fm_busy_classify tmux none cursor task "$TMP_ROOT/unclaimed/state")
+  [ "$out" = "unknown cursor-transcript" ] || fail "an unclaimed workspace must be unknown, got '$out'"
+  pass "cursor transcript fold: an unresolvable binding is unknown, never idle"
+}
+
+test_transcript_binding_matches_workspace_exactly() {
+  # The binding matches the recorded absolute workspacePath, NOT a reconstructed
+  # slug and NOT a prefix - otherwise a nested worktree would fold its parent's
+  # transcript. The fixture slug is deliberately opaque so a slug-rebuilding
+  # implementation cannot pass this.
+  local state out proj
+  state=$(make_cursor_binding nested conv-f '{"role":"user"}
+')
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "busy cursor-transcript" ] || fail "exact workspace match must resolve, got '$out'"
+  # Point the project at a PREFIX of the bound workspace: must no longer match.
+  proj=$(dirname "$state")/projects/some-opaque-slug-nested
+  printf '{\n  "workspacePath": "%s"\n}\n' "$(dirname "$state")/worktre" > "$proj/.workspace-trusted"
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "unknown cursor-transcript" ] \
+    || fail "a prefix of the workspace path must NOT bind, got '$out'"
+  pass "cursor transcript binding: exact recorded workspacePath only, never a prefix or rebuilt slug"
+}
+
+test_transcript_fold_excludes_prior_conversations() {
+  # A relaunch in a reused worktree must fold ITS turn, not its predecessor's.
+  local state proj out
+  state=$(make_cursor_binding prior conv-old '{"role":"user"}
+')
+  proj="$TMP_ROOT/prior/projects/some-opaque-slug-prior"
+  printf 'prior_conversation=conv-old\n' >> "$state/task.cursor-session"
+  # Only the retired conversation exists, so nothing new resolves.
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "unknown cursor-transcript" ] \
+    || fail "a retired conversation must not be folded, got '$out'"
+  # The relaunched pane's own conversation resolves and wins.
+  mkdir -p "$proj/agent-transcripts/conv-new"
+  printf '{"role":"user"}\n{"type":"turn_ended","status":"success"}\n' \
+    > "$proj/agent-transcripts/conv-new/conv-new.jsonl"
+  out=$(fm_busy_classify tmux none cursor task "$state")
+  [ "$out" = "idle cursor-transcript" ] \
+    || fail "the relaunched pane's own conversation must resolve, got '$out'"
+  pass "cursor transcript fold: a prior conversation is excluded so a relaunch folds its own turn"
+}
+
+test_identity_accepts_cursor_shapes_rejects_lookalikes
+test_identity_signals_diverge
+test_verify_executable_refuses_unrelated_agent
+test_resolve_binary_prefers_stable_path
+test_tmux_classifies_cursor_pane_without_inferring_dead
+test_cursor_spawn_installs_attribution_guard
+test_cursor_marker_outranks_inherited_claudecode
+test_harness_ancestry_rejects_cursor_named_node_script
+test_transcript_fold_brackets_a_turn
+test_transcript_fold_ignores_lifecycle_tokens_in_message_text
+test_transcript_fold_handles_partially_appended_records
+test_transcript_fold_is_unknown_never_idle_when_unresolvable
+test_transcript_binding_matches_workspace_exactly
+test_transcript_fold_excludes_prior_conversations

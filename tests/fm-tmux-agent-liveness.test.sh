@@ -47,25 +47,32 @@ chmod +x "$LAB/shim/tmux"
 PATH="$LAB/shim:$PATH"
 export PATH
 
-# Stand-in "harness" binaries. These are SYMLINKS to a real long-running system
-# binary, never copies: a copied platform binary fails code-signing validation
-# and is killed on macOS arm64. The symlink name is what the kernel records as
-# the executable identity, which is exactly the signal under test.
-ln -s "$SLEEP_BIN" "$LAB/bin/claude-link"
-ln -s "$SLEEP_BIN" "$LAB/bin/pi"
-ln -s "$SLEEP_BIN" "$LAB/bin/cursor-agent"
-ln -s "$SLEEP_BIN" "$LAB/bin/notaharness"
+# Stand-in "harness" binaries. These wrappers exec a real long-running system
+# binary with argv[0] set to the fixture path, avoiding copied binaries and the
+# code-signing problem on macOS arm64 while preserving the process-name signal.
+make_runner() {  # <name>
+  local name=$1
+  cat > "$LAB/bin/$name" <<SH
+#!/usr/bin/env bash
+exec -a "\$0" "$SLEEP_BIN" "\$@"
+SH
+  chmod +x "$LAB/bin/$name"
+}
+make_runner claude-link
+make_runner pi
+make_runner cursor-agent
+make_runner notaharness
 # muse's installed binary is muse-bin-<version>: the launcher execs it, so the
 # version is the LIVE process name and it changes on every auto-update. Unlike
 # Claude Code's version-named binary there is no `muse` path component to fall
 # back on (~/.local/bin/muse-bin-<version>), so the executable name is the ONLY
 # signal, and `muse` alone is a common English fragment that must not widen into
 # a substring match. The last two names are the decoys that would be misread.
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bin-0.1.0-R708.1"
-ln -s "$SLEEP_BIN" "$LAB/bin/musescore"
-ln -s "$SLEEP_BIN" "$LAB/bin/amuse"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-binary"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bind"
+make_runner muse-bin-0.1.0-R708.1
+make_runner musescore
+make_runner amuse
+make_runner muse-binary
+make_runner muse-bind
 
 # A launcher whose own process identity is a bare shell, running the harness as
 # a child in the same foreground process group - the shape the real Pi Launcher
