@@ -9,9 +9,9 @@
 # This file is sourced by scripts and has no side effects on source.
 
 # Known harness command names; extend when a new adapter is verified.
-# cursor's command is `cursor-agent`; match it in full rather than a bare
-# `cursor` so a firstmate script basename such as fm-cursor-turnend-hook.sh is
-# never mistaken for the harness process.
+# Cursor's command is `cursor-agent`; match it in full rather than a bare
+# `cursor` so unrelated firstmate script names are never mistaken for the
+# harness process.
 FM_HARNESS_RE='claude|codex|opencode|grok|kimi|cursor-agent|^pi$|^pi-signed$'
 
 # The same harnesses as exact executable names. Keep in sync with
