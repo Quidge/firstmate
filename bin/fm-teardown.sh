@@ -668,13 +668,6 @@ remove_kimi_turnend_auth() {
   rm -f -- "$path"
 }
 
-remove_cursor_artifacts() {
-  local state_dir=$1 id=$2
-  # The per-task commit-msg hook dir is keyed only on the task id, so remove it
-  # unconditionally during teardown.
-  rm -rf "$state_dir/$id.cursor-git-hooks"
-}
-
 retire_busy_state() {
   local state_dir=$1 id=$2 gen=${3:-}
   if [ -n "$gen" ]; then
@@ -2258,7 +2251,6 @@ cleanup_firstmate_home_children() {
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id" || return 1
     remove_kimi_turnend_auth "$sub_state" "$child_id" || return 1
-    remove_cursor_artifacts "$sub_state" "$child_id"
     remove_pr_poll_artifacts "$sub_state" "$child_id" || return 1
     child_busy_gen=$(meta_value "$child_meta" busy_gen)
     if [ -z "$child_busy_gen" ]; then
@@ -2540,7 +2532,6 @@ if [ "$KIND" = secondmate ]; then
 fi
 remove_grok_turnend_auth "$STATE" "$ID" || exit 1
 remove_kimi_turnend_auth "$STATE" "$ID" || exit 1
-remove_cursor_artifacts "$STATE" "$ID"
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.

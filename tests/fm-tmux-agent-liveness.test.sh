@@ -283,8 +283,18 @@ pass "tmux liveness: an absent window classifies missing rather than inheriting 
 # shellcheck source=bin/fm-tmux-lib.sh
 . "$ROOT/bin/fm-tmux-lib.sh"
 
-ln -s "$SLEEP_BIN" "$LAB/bin/cursor-agent"
-ln -s "$SLEEP_BIN" "$LAB/bin/notcursor"
+# These cases need a pane whose process resolves as genuinely Cursor, which is a
+# different signal from the alive-set fixtures above: make_runner execs the real
+# binary under `exec -a`, so the kernel records comm as that binary's own name and
+# only argv[0] carries the fixture path. A SYMLINK is what puts the fixture name
+# in comm, which is the signal fm_tmux_pane_is_cursor reads. The two constructions
+# therefore cannot share a path - $LAB/bin/cursor-agent already exists as a
+# wrapper - so the symlink fixtures get their own directory. Creating them over
+# the wrapper instead would fail as an existing path and silently leave these
+# cases asserting against the wrapper, which can never classify as Cursor.
+mkdir -p "$LAB/cursorbin"
+ln -s "$SLEEP_BIN" "$LAB/cursorbin/cursor-agent"
+ln -s "$SLEEP_BIN" "$LAB/cursorbin/notcursor"
 
 # Cursor's real screen shape: a BARE composer row carrying its U+2192 glyph, two
 # footer rows below it, and the terminal cursor left on a blank row past the
@@ -323,7 +333,7 @@ cursor_anchored_verdict() {  # <target>
   fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" "$cy"
 }
 
-open_composer_pane cursor-idle "$LAB/bin/cursor-agent" 'Plan, search, build anything' 1
+open_composer_pane cursor-idle "$LAB/cursorbin/cursor-agent" 'Plan, search, build anything' 1
 fm_tmux_pane_is_cursor "$SESSION:cursor-idle" \
   || fail "a pane whose foreground process is cursor-agent must be identified as Cursor"
 [ "$(cursor_anchored_verdict "$SESSION:cursor-idle")" = unknown ] \
@@ -332,7 +342,7 @@ fm_tmux_pane_is_cursor "$SESSION:cursor-idle" \
   || fail "an idle Cursor composer must read empty; without it every away-mode escalation defers forever"
 pass "cursor composer: an idle Cursor pane reads empty even though the cursor row is blind"
 
-open_composer_pane cursor-typed "$LAB/bin/cursor-agent" 'half typed captain text' 0
+open_composer_pane cursor-typed "$LAB/cursorbin/cursor-agent" 'half typed captain text' 0
 [ "$(cursor_anchored_verdict "$SESSION:cursor-typed")" = unknown ] \
   || fail "the cursor-anchored source must be blind here too"
 [ "$(fm_tmux_composer_state "$SESSION:cursor-typed")" = pending ] \
@@ -340,7 +350,7 @@ open_composer_pane cursor-typed "$LAB/bin/cursor-agent" 'half typed captain text
 pass "cursor composer: real typed text still reads pending, so the injection guard holds"
 
 # The SAME rendered screen, with only the foreground process identity changed.
-open_composer_pane notcursor-idle "$LAB/bin/notcursor" 'Plan, search, build anything' 1
+open_composer_pane notcursor-idle "$LAB/cursorbin/notcursor" 'Plan, search, build anything' 1
 if fm_tmux_pane_is_cursor "$SESSION:notcursor-idle"; then
   fail "a pane running a non-Cursor binary must not be identified as Cursor"
 fi

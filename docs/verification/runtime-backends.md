@@ -839,10 +839,6 @@ This row is a delivery guard for submit acknowledgement only; recorded worker st
 | Skill invocation | `/<skill>`; cursor discovers firstmate's user-level skills, and `/no-mistakes` autocompleted with firstmate's own description and invoked the skill |
 | Slash popup | real: the first Enter closes the popup and a SECOND Enter submits, the same hazard as grok, covered by the submit core's retried Enter |
 
-Cursor's server-driven attribution can add `Co-authored-by: Cursor <cursoragent@cursor.com>`, which violates `AGENTS.md`.
-The project Cursor config cannot safely suppress it, so `fm-spawn.sh` installs a per-task `commit-msg` hook under `state/<id>.cursor-git-hooks/` and injects it through `core.hooksPath`; the hook removes Cursor's `@cursor.com` and `@cursor.sh` trailers while preserving human co-authors and is removed at teardown.
-The fork-local raw probe transcript remains at `data/cursor-verify/report.md` when present.
-
 ### End-to-end
 
 A throwaway scout was spawned through `bin/fm-spawn.sh --scout --backend tmux` on a real cursor worker and driven to completion:
@@ -892,7 +888,7 @@ All seven live panes of the running default session - one Pi, four Claude, two p
 Zellij, cmux, and Orca share a submit core that never consults the busy footer, so a Cursor steer there lands but `fm-send` reports delivery unconfirmed and exits non-zero.
 Teaching that shared core the same transition is deliberately separate work, because it changes the submit path for every harness on those three backends and needs its own live validation on each.
 
-The portable regression is `tests/fm-cursor-harness.test.sh`, including the fork-critical per-task `commit-msg` attribution guard, the composer captures are pinned in `tests/fm-composer-lib.test.sh`, and the Herdr submit and footer behavior is pinned in `tests/fm-backend-herdr.test.sh`.
+The portable regression is `tests/fm-cursor-harness.test.sh`, the composer captures are pinned in `tests/fm-composer-lib.test.sh`, and the Herdr submit and footer behavior is pinned in `tests/fm-backend-herdr.test.sh`.
 The fork-local raw probe transcript remains at `data/cursor-verify/report.md` when present.
 Refresh this harness-dependent proof before accepting a cursor upgrade:
 

@@ -234,6 +234,7 @@ Every native-path automatic marker was present and every deny sentinel remained 
 
 `tests/fm-arm-pretool-check.test.sh` owns the adversarial acceptance matrix.
 Every row runs through Codex-shaped stdin, Claude-shaped stdin, Grok-shaped stdin, OpenCode-shaped CLI, and Pi-shaped CLI entry forms.
+`tests/fm-cursor-primary.test.sh` separately covers Cursor's returned-decision transport and tracked hook wiring.
 The suite also verifies real newline bytes, direct classifier reason codes, comments, heredoc data, malformed and unsupported protected syntax, constructed dynamic payloads, malformed transport fail-open behavior, missing runtime fail-open behavior, output shapes, and exact adapter field forwarding plus exit-2 mapping.
 
 Run:

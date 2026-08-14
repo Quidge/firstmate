@@ -127,6 +127,7 @@ Every shell variable reference in the Grok hook command carries an inline defaul
 
 `tests/fm-cd-pretool-check.test.sh` owns the acceptance matrix.
 Every block and allow case runs through Codex-shaped stdin, Claude-shaped stdin, Grok-shaped stdin, OpenCode-shaped CLI, and Pi-shaped CLI entry forms.
+`tests/fm-cursor-primary.test.sh` separately covers Cursor's returned-decision transport and tracked hook wiring.
 The suite also proves the end-to-end cwd-leak regression (a firstmate-owned backlog write leaking into a project clone, then denied at the exact command), the checkout scoping (fires in a git-cloned secondmate fixture, inert in a crewmate/scout linked worktree, inert outside a firstmate checkout, inert outside a git repo), the fail-open transport behavior, the prefilter fast path, the policy CLI output contract, and the per-harness wiring.
 
 Run:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/fm-cursor-harness.test.sh - the portable regression for the Cursor
-# Agent CLI crewmate/scout adapter.
+# Agent CLI adapter's identity, liveness, and busy-state contracts.
 #
 # Cursor's identity, liveness, and busy checks are HARNESS-DEPENDENT: their
 # verdicts come from what the vendor emits (a process name, an env marker, a
@@ -19,7 +19,8 @@
 #      not clear it and whichever marker is tested first wins.
 #   4. The transcript fold brackets a turn: a trailing turn_ended is idle, a
 #      later role:user is busy, and an unresolvable binding is unknown.
-#   5. Cursor is a crewmate/scout adapter only and refuses a secondmate launch.
+#   5. Those contracts are shared by every Cursor role. The primary and
+#      secondmate lifecycle itself is covered by tests/fm-cursor-primary.test.sh.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -171,84 +172,6 @@ test_tmux_classifies_cursor_pane_without_inferring_dead() {
     [ "$(fm_backend_tmux_classify_process_name zsh '')" = shell ] || fail "zsh regressed"
   ) || exit 1
   pass "tmux liveness: a cursor pane is agent; an unrelated node/agent is other, never dead"
-}
-
-# --- 2b. Fork-critical attribution guard ------------------------------------
-
-make_cursor_spawn_fakebin() {
-  local dir=$1 fakebin
-  fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
-esac
-case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
-  send-keys)
-    [ -n "${FM_FAKE_TEXT_LOG:-}" ] && printf '%s\n' "$*" >> "$FM_FAKE_TEXT_LOG"
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  cat > "$fakebin/cursor-agent" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-  --list-models) printf '%s\n' 'cursor-grok-4.5-high - Cursor model'; exit 0 ;;
-  --help) printf '%s\n' 'Start the Cursor Agent'; exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux" "$fakebin/cursor-agent"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
-  printf '%s\n' "$fakebin"
-}
-
-test_cursor_spawn_installs_attribution_guard() {
-  local case_dir="$TMP_ROOT/attribution" home proj wt fakebin id=cursor-attribution-z1
-  local out rc hookdir hook msg clean
-  fakebin=$(make_cursor_spawn_fakebin "$case_dir/fake")
-  home="$case_dir/home"; proj="$case_dir/project"; wt="$case_dir/wt"
-  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
-  printf 'cursor\n' > "$home/config/crew-harness"
-  printf 'brief for cursor\n' > "$home/data/$id/brief.md"
-  fm_git_worktree "$proj" "$wt" attribution-wt
-  touch "$home/state/.last-watcher-beat"
-  out=$(HOME="$home" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" FM_PROJECTS_OVERRIDE="$home/projects" \
-    FM_CONFIG_OVERRIDE="$home/config" FM_SPAWN_NO_GUARD=1 \
-    FM_FAKE_PANE_PATH="$wt" FM_FAKE_TEXT_LOG="$case_dir/text.log" \
-    TMUX='fake,1,0' PATH="$fakebin:$PATH" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --harness cursor \
-      --model cursor-grok-4.5-high --mode no-mistakes --yolo off 2>&1)
-  rc=$?
-  [ "$rc" -eq 0 ] || fail "cursor spawn failed while installing attribution guard: $out"
-  hookdir="$home/state/$id.cursor-git-hooks"
-  hook="$hookdir/commit-msg"
-  assert_present "$hook" "cursor attribution hook was not installed"
-  [ -x "$hook" ] || fail "cursor attribution hook is not executable"
-  assert_grep 'GIT_CONFIG_KEY_0=core.hooksPath' "$case_dir/text.log" \
-    "cursor worker did not receive the attribution hook configuration"
-  msg="$case_dir/commit-msg"
-  printf '%s\n%s\n' 'Add a feature' \
-    'Co-authored-by: Cursor <cursoragent@cursor.com>' > "$msg"
-  "$hook" "$msg" || fail "cursor attribution hook returned nonzero"
-  assert_no_grep 'cursoragent@cursor.com' "$msg" \
-    "cursor attribution hook left the Cursor trailer"
-  assert_grep 'Add a feature' "$msg" \
-    "cursor attribution hook changed the commit subject"
-  assert_grep 'GIT_CONFIG_VALUE_0=' "$case_dir/text.log" \
-    "cursor worker did not receive the per-task hook path"
-  clean="$case_dir/clean-msg"
-  printf '%s\n' 'Signed-off-by: Human <human@example.com>' > "$clean"
-  cp "$clean" "$clean.before"
-  "$hook" "$clean" || fail "cursor attribution hook failed on a clean message"
-  cmp -s "$clean" "$clean.before" || fail "hook altered a message without Cursor attribution"
-  pass "fm-spawn: upstream Cursor transcript wiring retains fork attribution stripping"
 }
 
 # --- 3. Detection ordering ---------------------------------------------------
@@ -472,7 +395,6 @@ test_identity_signals_diverge
 test_verify_executable_refuses_unrelated_agent
 test_resolve_binary_prefers_stable_path
 test_tmux_classifies_cursor_pane_without_inferring_dead
-test_cursor_spawn_installs_attribution_guard
 test_cursor_marker_outranks_inherited_claudecode
 test_harness_ancestry_rejects_cursor_named_node_script
 test_transcript_fold_brackets_a_turn

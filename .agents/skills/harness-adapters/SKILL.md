@@ -427,9 +427,6 @@ Herdr additionally draws the composer's rules with half-block glyphs, which the 
 FM_HARNESS_LIVENESS_DRIFT=1 bin/fm-test-run.sh tests/fm-harness-liveness-drift-live-e2e.test.sh
 ```
 
-**Cursor attribution.**
-Cursor's server-driven attribution can add `Co-authored-by: Cursor <cursoragent@cursor.com>`, which violates `AGENTS.md`.
-The project Cursor config cannot safely suppress it, so `fm-spawn.sh` installs a per-task `commit-msg` hook under `state/<id>.cursor-git-hooks/` and injects it through `core.hooksPath`; the hook removes Cursor's `@cursor.com` and `@cursor.sh` trailers while preserving human co-authors and is removed at teardown.
 The fork-local raw probe transcript remains at `data/cursor-verify/report.md` when present, while the dated verification owner is `docs/verification/runtime-backends.md`.
 
 Firstmate acquires and enters the treehouse worktree before launching Cursor, then passes that same absolute path through `--workspace`.
