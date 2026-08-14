@@ -169,15 +169,13 @@
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
-# cursor likewise installs no hook: it writes state/<id>.cursor-session to bind
-# the pane to cursor's own conversation transcript (projects root, the exact
+# cursor installs no per-task hook either: it writes state/<id>.cursor-session to
+# bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
-# already existed for that workspace). cursor is crewmate/scout only and is
-# refused for --secondmate, and is launched through the verified binary resolver
-# because `cursor` is not the CLI name.
-# For cursor task workers, fm-spawn also installs a per-task git commit-msg hook
-# under state/ and injects it through core.hooksPath to strip Cursor's agent
-# attribution trailer without touching shared Cursor configuration.
+# already existed for that workspace). It is launched through the verified binary
+# resolver because `cursor` is not the CLI name. A cursor SECONDMATE instead runs
+# the tracked project-scope .cursor/hooks.json in its own home, whose stop-hook
+# park owns that home's supervision (docs/supervision-protocols/cursor.md).
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
 # A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
 # mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
@@ -441,13 +439,7 @@ spawn_remote_secondmate() {
     harness=$("$FM_ROOT/bin/fm-harness.sh" secondmate)
   fi
   case "$harness" in
-    cursor)
-      fm_lock_release "$registry_lock" || true
-      fm_lock_release "$SPAWN_TASK_LOCK" || true
-      echo "error: cursor is a verified crewmate/scout adapter only and cannot run a remote secondmate; no primary supervision protocol has been verified for Cursor Agent CLI" >&2
-      return 1
-      ;;
-    claude|codex|opencode|pi|pi-signed|grok|kimi) ;;
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor) ;;
     *)
       fm_lock_release "$registry_lock" || true
       fm_lock_release "$SPAWN_TASK_LOCK" || true
@@ -1232,15 +1224,6 @@ esac
 # secondmate whose supervision cycle could never be armed.
 if [ "$KIND" = secondmate ] && [ "$HARNESS" = muse ]; then
   echo "error: muse is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
-  exit 1
-fi
-
-# Cursor is verified only for task workers.
-# Its CLI has no verified primary turn-end or watcher supervision integration,
-# so a Cursor secondmate would start successfully but could never satisfy the
-# persistent primary-session contract.
-if [ "$KIND" = secondmate ] && [ "$HARNESS" = cursor ]; then
-  echo "error: cursor is a verified crewmate/scout adapter only and cannot run a secondmate; no primary supervision protocol has been verified for Cursor Agent CLI" >&2
   exit 1
 fi
 
@@ -2572,30 +2555,6 @@ EOF
           done
         fi
       } > "$STATE/$ID.cursor-session"
-      # Attribution neutralization (AGENTS.md: never add an agent name as a commit
-      # co-author). Cursor's server-driven attribution runs a commit trailer that
-      # violates that rule, so this per-task hook strips only Cursor's namespace.
-      CURSOR_GIT_HOOKS_DIR="$STATE_REAL/$ID.cursor-git-hooks"
-      mkdir -p "$CURSOR_GIT_HOOKS_DIR"
-      cat > "$CURSOR_GIT_HOOKS_DIR/commit-msg" <<'CURSOR_COMMIT_MSG_HOOK'
-#!/usr/bin/env bash
-# firstmate-owned per-task commit-msg hook (bin/fm-spawn.sh, cursor adapter).
-# Strip Cursor's agent trailer while preserving every other commit-message line.
-set -u
-msg=${1:-}
-[ -n "$msg" ] && [ -f "$msg" ] || exit 0
-re='^[[:space:]]*Co-authored-by:.*<[^>]*@cursor\.(com|sh)>[[:space:]]*$'
-if grep -iqE "$re" "$msg" 2>/dev/null; then
-  tmp="$msg.fm-cursor.$$"
-  if grep -ivE "$re" "$msg" > "$tmp" 2>/dev/null; then
-    mv -f "$tmp" "$msg"
-  else
-    rm -f "$tmp" 2>/dev/null || true
-  fi
-fi
-exit 0
-CURSOR_COMMIT_MSG_HOOK
-      chmod +x "$CURSOR_GIT_HOOKS_DIR/commit-msg"
       ;;
     kimi*)
       # Kimi's Stop hook is global, but it is inert unless cwd contains this
@@ -2786,8 +2745,11 @@ fi
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   sq_primary_home=$(shell_quote "$FM_HOME")
+  # Keep this in step with fm_supervision_model (bin/fm-wake-lib.sh): Claude's
+  # Stop auto-arm and Cursor's stop-hook park both run the watcher only BETWEEN
+  # turns, so a fresh beacon with no live watcher is their healthy mid-turn state.
   case "$HARNESS" in
-    claude) supervision_model=autoarm ;;
+    claude|cursor) supervision_model=autoarm ;;
     *) supervision_model=persistent ;;
   esac
   # Deliver the primary's EFFECTIVE trace-context decision as a normalized on/off
@@ -2842,19 +2804,6 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
     fi
     LAUNCH="unset TRACEPARENT; $LAUNCH"
   fi
-fi
-# Activate the cursor attribution-stripping commit-msg hook for the cursor worker
-# by pointing git at its per-task hooks dir via the GIT_CONFIG_* environment (git
-# ignores a per-worktree hooks dir but honors an env-injected core.hooksPath).
-# Sent on the same GOTMPDIR channel so it lands before launch and is inherited by
-# every git the cursor worker runs; the hook itself is a no-op for any commit
-# without a Cursor trailer, so it never disturbs no-mistakes commits in the pane.
-# Gated to non-secondmate exactly like the hook creation above, so the injected
-# path always names a hook dir that was actually written.
-if [ "$HARNESS" = cursor ] && [ "$KIND" != secondmate ]; then
-  spawn_send_text_line "$T" "export GIT_CONFIG_COUNT=1"
-  spawn_send_text_line "$T" "export GIT_CONFIG_KEY_0=core.hooksPath"
-  spawn_send_text_line "$T" "export GIT_CONFIG_VALUE_0=$(shell_quote "$STATE_REAL/$ID.cursor-git-hooks")"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
