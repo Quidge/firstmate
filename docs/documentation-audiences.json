@@ -193,10 +193,6 @@
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/tailscale-serve/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
       "path": ".agents/skills/updatefirstmate/SKILL.md",
       "audience": "agent-runtime"
     },
