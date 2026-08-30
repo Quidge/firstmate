@@ -1513,6 +1513,7 @@ EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
       if [ "$signal_commit_error" -ne 0 ]; then
+        signal_enqueue_ok=1
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
           wake_enqueue signal "$(basename "$f")" "$reason" || { signal_enqueue_ok=0; break; }
