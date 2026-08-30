@@ -359,9 +359,8 @@ inbox_steer_check() {  # <window> <task>
         fi
         if [ -d "${rec%/*}" ]; then
           reason="stale: $w (steering-inbox ladder bookkeeping unwritable: ${rec%/*}/.ring-state cannot be written while $rec stays unhandled; the doorbell cannot advance toward escalation - inspect the inbox directory)"
-          if wake_enqueue stale "$w" "$reason"; then
-            wake "$reason"
-          fi
+          fm_wake_append stale "$w" "$reason" || exit 1
+          wake "$reason"
         fi
       fi
       triage_log "steer-inbox delivery attempt: $task ${rec##*/} result=$ring_rc"
@@ -372,13 +371,12 @@ inbox_steer_check() {  # <window> <task>
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
       fi
-      if wake_enqueue stale "$w" "$reason"; then
-        if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
-          echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
-          exit 1
-        fi
-        wake "$reason"
+      fm_wake_append stale "$w" "$reason" || exit 1
+      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
+        echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
+        exit 1
       fi
+      wake "$reason"
       ;;
   esac
 }
@@ -467,7 +465,7 @@ EOF
     reason="check: secondmate wake-loop stalled: mate=$task row=$seq age=${age}s"
     queued=$(fm_wake_queued_keys check)
     if ! printf '%s\n' "$queued" | grep -Fx "$notify_key" >/dev/null 2>&1; then
-      wake_enqueue check "$notify_key" "$reason" || return 0
+      fm_wake_append check "$notify_key" "$reason" || return 1
     fi
     fm_wake_secondmate_stall_receipt_write "$task" "$row_key" || return 1
     fm_wake_secondmate_stall_marker_write "$task" "$row_key" || return 1
@@ -500,10 +498,9 @@ resurface_absorbed() {  # <window> <throttle-marker> <age> <reason>
   local win=$1 throttle=$2 age=$3 reason=$4
   [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] || return 0
   [ "$(age_of "$throttle")" -ge "$PAUSE_RESURFACE_SECS" ] || return 0   # 999999 when no prior re-surface
-  if wake_enqueue stale "$win" "$reason"; then
-    date +%s > "$throttle"
-    wake "$reason"
-  fi
+  fm_wake_append stale "$win" "$reason" || exit 1
+  date +%s > "$throttle"
+  wake "$reason"
 }
 
 # Defer ONE wedge escalation for a pane that went quiet while its own task
@@ -570,19 +567,15 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
           return 0
         fi
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
+        echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
-        # Persist the incremented escalation count and clear the timer only after
-        # the wake is durably queued, so a deferred enqueue re-escalates from the
-        # same count on the next cycle rather than inflating it.
-        if wake_enqueue stale "$win" "$reason"; then
-          echo "$n" > "$escalation_file"
-          rm -f "$since_file"
-          clear_write_tracking "$(window_key "$win")"
-          wake "$reason"
-        fi
+        fm_wake_append stale "$win" "$reason" || exit 1
+        rm -f "$since_file"
+        clear_write_tracking "$(window_key "$win")"
+        wake "$reason"
       fi
       ;;
   esac
@@ -683,10 +676,9 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
       clear_write_tracking "$key"
       declared="declared:$(fm_wake_signal_sig "$statusf" || true)"
       if [ "$(cat "$STATE/.stale-$key" 2>/dev/null || true)" != "$declared" ]; then
-        if wake_enqueue stale "$win" "stale: $win"; then
-          printf '%s' "$declared" > "$STATE/.stale-$key"
-          wake "stale: $win"
-        fi
+        fm_wake_append stale "$win" "stale: $win" || exit 1
+        printf '%s' "$declared" > "$STATE/.stale-$key"
+        wake "stale: $win"
       fi
       return 0
     fi
@@ -772,9 +764,7 @@ pause_state_class() {  # <window> <task>
 surface_nonterminal_stale() {  # <window> <hash>
   local win=$1 h=$2 key task last
   key=$(window_key "$win")
-  # A deferred enqueue returns without advancing the .stale-* suppressor, so the
-  # same stale hash is re-detected and retried on the next poll.
-  wake_enqueue stale "$win" "stale: $win" || return 0
+  fm_wake_append stale "$win" "stale: $win" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key"
   clear_write_tracking "$key"
@@ -1242,12 +1232,9 @@ printf '%s\n' "$FM_WATCH_DELIVERY_IDENTITY" > "$WATCH_LOCK/pid-identity" 2>/dev/
 # Finish only identity-bound retirement receipts before any check can run.
 if ! fm_pr_poll_retirement_recover_all "$STATE" "$SCRIPT_DIR/fm-pr-poll.sh"; then
   reason="check: rejected unauthenticated PR poll retirement receipts:$FM_PR_POLL_RETIREMENT_REJECTED"
-  # A deferred enqueue leaves the preserved receipts on disk; the next watcher
-  # start re-runs this recovery and re-surfaces them, so the loop can proceed.
-  if wake_enqueue check pr-poll-retirement "$reason"; then
-    touch "$STATE/.last-check"
-    wake "$reason"
-  fi
+  fm_wake_append check pr-poll-retirement "$reason" || exit 1
+  touch "$STATE/.last-check"
+  wake "$reason"
 fi
 
 # Shared by both the first-notification and already-notified paths below so
@@ -1402,21 +1389,16 @@ while :; do
           fi
           wake "$reason"
         fi
-        # A deferred enqueue skips consuming the result (no cadence touch, no
-        # wake); the poll re-runs next interval and re-detects the still-true
-        # result rather than the watcher dying on the blip.
-        if wake_enqueue check "$c" "$reason"; then
-          touch "$STATE/.last-check"
-          wake "$reason"
-        fi
+        fm_wake_append check "$c" "$reason" || exit 1
+        touch "$STATE/.last-check"
+        wake "$reason"
       fi
     done
     if [ -n "$rejected_checks" ]; then
       reason="check: rejected unauthenticated state checks:$rejected_checks"
-      if wake_enqueue check unauthenticated-state-checks "$reason"; then
-        touch "$STATE/.last-check"
-        wake "$reason"
-      fi
+      fm_wake_append check unauthenticated-state-checks "$reason" || exit 1
+      touch "$STATE/.last-check"
+      wake "$reason"
     fi
     touch "$STATE/.last-check"
   fi
@@ -1464,39 +1446,37 @@ EOF
     signal_actionable=$?
     # shellcheck disable=SC2086  # same space-separated status-path list
     if afk_present || [ "$signal_actionable" -eq 0 ] || ! signal_crew_provably_working $files; then
-      # Enqueue the whole pending set first; advance the .seen-* suppressors only
-      # if every enqueue succeeded, so a deferred enqueue for any one file leaves
-      # the entire set unmarked and re-detected on the next poll (last-write-wins
-      # dedupe collapses any records that did land before the deferral).
-      signal_enqueue_ok=1
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
-        wake_enqueue signal "$(basename "$f")" "$reason" || { signal_enqueue_ok=0; break; }
+        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
       done <<EOF
 $pending
 EOF
-      if [ "$signal_enqueue_ok" -eq 1 ]; then
-        while IFS=$(printf '\t') read -r sf sig f; do
-          [ -n "$sf" ] || continue
-          case "$f" in
-            *.status)
-              fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
-              mark_surface_reported "$f" "$sig" || true
-              ;;
-            *) printf '%s' "$sig" > "$sf" ;;
-          esac
-        done <<EOF
+      # The wake signature advances for every file in this batch, including one
+      # whose span could not be classified: it has now been reported, and this is
+      # what bounds an unreadable log to one report per distinct file state. Only
+      # a SUCCESSFULLY classified log commits a classification position below, so
+      # an unreadable log's content is still classified once it becomes readable.
+      while IFS=$(printf '\t') read -r sf sig f; do
+        [ -n "$sf" ] || continue
+        case "$f" in
+          *.status)
+            fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true
+            mark_surface_reported "$f" "$sig" || true
+            ;;
+          *) printf '%s' "$sig" > "$sf" ;;
+        esac
+      done <<EOF
 $pending
 EOF
-        while IFS=$(printf '\t') read -r f surface_end surface_ident; do
-          [ -n "$f" ] || continue
-          fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
-          mark_surfaced "$f" "$surface_end" "$surface_ident"
-        done <<EOF
+      while IFS=$(printf '\t') read -r f surface_end surface_ident; do
+        [ -n "$f" ] || continue
+        fm_wake_status_seen_commit "$STATE" "$f" "$surface_end" "$surface_ident" || true
+        mark_surfaced "$f" "$surface_end" "$surface_ident"
+      done <<EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
-        wake "$reason"
-      fi
+      wake "$reason"
     else
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
@@ -1513,16 +1493,13 @@ EOF
 $FM_SIGNAL_SURFACE_ENDPOINTS
 EOF
       if [ "$signal_commit_error" -ne 0 ]; then
-        signal_enqueue_ok=1
         while IFS=$(printf '\t') read -r sf sig f; do
           [ -n "$sf" ] || continue
-          wake_enqueue signal "$(basename "$f")" "$reason" || { signal_enqueue_ok=0; break; }
+          fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
         done <<EOF
 $pending
 EOF
-        if [ "${signal_enqueue_ok:-1}" -eq 1 ]; then
-          wake "$reason"
-        fi
+        wake "$reason"
       fi
       triage_log "absorbed benign $reason"
     fi
@@ -1583,10 +1560,9 @@ EOF
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if wake_enqueue stale "$w" "stale: $w"; then
-              printf '%s' "$h" > "$sf"
-              wake "stale: $w"
-            fi
+            fm_wake_append stale "$w" "stale: $w" || exit 1
+            printf '%s' "$h" > "$sf"
+            wake "stale: $w"
           fi
         elif stale_is_terminal "$w" "$STATE"; then
           # The log's last line is captain-relevant - but that alone is not
@@ -1610,19 +1586,18 @@ EOF
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
-              if wake_enqueue stale "$w" "stale: $w"; then
-                printf '%s' "$h" > "$sf"
-                rm -f "$ssf"
-                clear_write_tracking "$key"
-                stale_status="$STATE/$(window_to_task "$w" "$STATE").status"
-                stale_record=$(status_span_first_actionable_record "$stale_status" 0)
-                case $? in
-                  0|1) stale_end=${stale_record%%$'\t'*}; stale_rest=${stale_record#*$'\t'}; stale_ident=${stale_rest%%$'\t'*} ;;
-                  *) stale_end=''; stale_ident='' ;;
-                esac
-                mark_surfaced "$stale_status" "$stale_end" "$stale_ident"
-                wake "stale: $w"
-              fi
+              fm_wake_append stale "$w" "stale: $w" || exit 1
+              printf '%s' "$h" > "$sf"
+              rm -f "$ssf"
+              clear_write_tracking "$key"
+              stale_status="$STATE/$(window_to_task "$w" "$STATE").status"
+              stale_record=$(status_span_first_actionable_record "$stale_status" 0)
+              case $? in
+                0|1) stale_end=${stale_record%%$'\t'*}; stale_rest=${stale_record#*$'\t'}; stale_ident=${stale_rest%%$'\t'*} ;;
+                *) stale_end=''; stale_ident='' ;;
+              esac
+              mark_surfaced "$stale_status" "$stale_end" "$stale_ident"
+              wake "stale: $w"
             fi
           elif [ -e "$ssf" ]; then
             # This exact hash was already overridden as provably-working (a
@@ -1740,31 +1715,27 @@ EOF
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
     if afk_present; then
-      if wake_enqueue heartbeat heartbeat heartbeat; then
-        touch "$STATE/.last-heartbeat"
-        wake "heartbeat"
-      fi
+      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      touch "$STATE/.last-heartbeat"
+      wake "heartbeat"
     elif heartbeat_scan_finds_actionable; then
       # Backstop: a captain-relevant event the per-wake path absorbed by mistake.
       # Enqueue first, then record every status log surfaced through its end so the
-      # next heartbeat does not re-fire it (enqueue-before-suppress preserved).
-      # A deferred enqueue leaves .last-heartbeat untouched so the scan retries.
-      if wake_enqueue heartbeat heartbeat heartbeat; then
-        touch "$STATE/.last-heartbeat"
-        mark_all_captain_relevant_surfaced || true
-        wake "heartbeat"
-      fi
+      # next heartbeat does not re-fire it (enqueue-before-suppress preserved);
+      # this wake sends firstmate to the whole fleet, so every log is read.
+      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      touch "$STATE/.last-heartbeat"
+      mark_all_captain_relevant_surfaced || true
+      wake "heartbeat"
     else
       if ! mark_all_captain_relevant_surfaced; then
-        if wake_enqueue heartbeat heartbeat heartbeat; then
-          touch "$STATE/.last-heartbeat"
-          wake "heartbeat"
-        fi
-      else
+        fm_wake_append heartbeat heartbeat heartbeat || exit 1
         touch "$STATE/.last-heartbeat"
-        echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
-        triage_log "absorbed heartbeat (no captain-relevant change)"
+        wake "heartbeat"
       fi
+      touch "$STATE/.last-heartbeat"
+      echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
+      triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
   fi
 

@@ -1397,29 +1397,6 @@ fm_wake_append() {
   return "$status"
 }
 
-# Bounded-retry wrapper around fm_wake_append for supervision callers that must
-# not die on a transient enqueue failure. Only the recoverable I/O / contention
-# failure (rc 1) is retried - a wake-queue lock held while a turn drains, a brief
-# filesystem hiccup, or a racing second watcher - because the caller can safely
-# try again on its next cycle. An invalid wake kind (rc 2) is a code defect, not
-# contention, so it is returned immediately without retry. FM_WAKE_APPEND_RETRIES
-# bounds the attempts and FM_WAKE_APPEND_RETRY_SLEEP paces them; both are read at
-# call time so a caller (or a test) can override them. Returns fm_wake_append's
-# final rc: 0 on success, 2 for an invalid kind, else the last write failure rc.
-fm_wake_append_resilient() {  # <kind> <key> <payload>
-  local attempts="${FM_WAKE_APPEND_RETRIES:-4}" sleep_for="${FM_WAKE_APPEND_RETRY_SLEEP:-0.15}" i=0 rc
-  case "$attempts" in ''|*[!0-9]*|0) attempts=1 ;; esac
-  while :; do
-    fm_wake_append "$@"
-    rc=$?
-    [ "$rc" -eq 0 ] && return 0
-    [ "$rc" -eq 2 ] && return 2
-    i=$((i + 1))
-    [ "$i" -ge "$attempts" ] && return "$rc"
-    sleep "$sleep_for"
-  done
-}
-
 # fm_wake_queued_keys <kind>
 # Print the distinct keys currently queued for <kind>, oldest first. Read under
 # the append lock so a concurrent append is never observed half-written. The

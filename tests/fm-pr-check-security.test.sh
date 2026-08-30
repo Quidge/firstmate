@@ -2056,7 +2056,7 @@ test_retirement_queue_failure_and_receipt_tampering() {
     run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "watcher did not complete the recovery handoff after queue publication failure"
+  [ "$rc" -ne 0 ] || fail "watcher retired despite queue publication failure"
   [ -s "$dir/gh.log" ] || fail "queue failure fixture did not reach the authenticated poll"
   [ "$(poll_artifact_snapshot "$state" task-a)" = "$before" ] || fail "queue failure changed poll artifacts"
   [ ! -e "$state/task-a.pr-poll-retirement" ] || fail "queue failure published a receipt"

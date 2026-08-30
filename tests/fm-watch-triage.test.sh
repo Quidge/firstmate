@@ -710,44 +710,6 @@ test_provably_working_signal_absorbed() {
   pass "a no-verb signal whose crew is provably working is absorbed (no exit, no queue, suppressor advanced, beacon present)"
 }
 
-test_benign_marker_failure_wakes_after_prior_enqueue_failure() {
-  local dir state fakebin out status_file pid real_mktemp i=0
-  dir=$(make_case benign-marker-fallback); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
-  status_file="$state/task.status"
-  real_mktemp=$(command -v mktemp)
-  cat > "$fakebin/mktemp" <<EOF
-#!/bin/sh
-case "\${1:-}" in
-  "$state/.watcher-down.tmp."*) [ -e "$state/.fail-marker-publish" ] && exit 1 ;;
-esac
-exec "$real_mktemp" "\$@"
-EOF
-  chmod +x "$fakebin/mktemp"
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
-  export FM_WAKE_APPEND_RETRIES=1
-  watch_bg "$state" "$fakebin" "$out"
-  pid=$!
-  unset FM_WAKE_APPEND_RETRIES
-  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited before fault injection"; }
-  touch "$state/.fail-marker-publish"
-  touch "$state/.afk"
-  printf 'working: compiling step 2\n' > "$status_file"
-  while [ "$i" -lt 100 ] && ! grep -F "wake enqueue deferred (kind=signal" "$state/.watch-triage.log" >/dev/null 2>&1; do
-    kill -0 "$pid" 2>/dev/null || fail "watcher exited before the injected enqueue failure"
-    sleep 0.1
-    i=$((i + 1))
-  done
-  grep -F "wake enqueue deferred (kind=signal" "$state/.watch-triage.log" >/dev/null 2>&1 \
-    || { reap "$pid"; fail "watcher did not reach the injected enqueue failure"; }
-  rm -f "$state/.afk" "$state/.fail-marker-publish"
-  mkdir "$state/.seen-task_status"
-  wait_for_exit "$pid" 100 || { reap "$pid"; fail "benign marker failure did not wake after an earlier enqueue failure"; }
-  grep -F "signal: $status_file" "$out" >/dev/null \
-    || fail "benign marker fallback did not print its wake reason"
-  [ -s "$state/.wake-queue" ] || fail "benign marker fallback did not enqueue a durable wake"
-  pass "benign marker fallback resets enqueue state for each poll cycle"
-}
-
 test_turn_ended_provably_working_absorbed() {
   local dir state fakebin out pid
   dir=$(make_case turn-ended-working); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
@@ -3168,7 +3130,6 @@ test_worktree_write_probe_is_wall_clock_bounded
 test_signal_crew_provably_working_classifier
 test_secondmate_status_signal_never_absorbed_classifier
 test_provably_working_signal_absorbed
-test_benign_marker_failure_wakes_after_prior_enqueue_failure
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_working_note_not_working_surfaced
