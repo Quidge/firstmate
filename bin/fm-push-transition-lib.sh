@@ -108,68 +108,61 @@ wake() {
   exit 0
 }
 
-# Non-fatal, bounded-retry enqueue for the watcher triage paths. A transient
-# enqueue failure - wake-queue lock contention while a turn drains the queue, a
-# brief filesystem hiccup, or a racing second watcher - must not tear supervision
-# down. The poll loop is the permanent fail-closed backstop: on a non-zero return
-# here the caller SKIPS advancing its suppression marker, so the same wake is
-# re-detected and re-enqueued on the next cycle. That keeps a recoverable
-# contention blip from becoming a supervision-killing exit, while genuinely
-# unrecoverable states still fail closed. Returns 0 when the wake is durably
-# queued and 1 when the caller should skip advancing its marker and retry next
-# cycle. An invalid wake kind is a code defect, not contention, so it fails
-# closed loudly rather than spinning.
-wake_enqueue() {  # <kind> <key> <payload>
-  local rc
-  fm_wake_append_resilient "$@"
-  rc=$?
-  case "$rc" in
-    0) return 0 ;;
-    2)
-      echo "watcher: refusing to continue - invalid wake kind '$1'" >&2
-      exit 1
-      ;;
-    *)
-      triage_log "wake enqueue deferred (kind=$1 key=$2): transient failure, supervision kept alive, retrying next cycle"
-      return 1
-      ;;
-  esac
-}
-
 _hb_surfaced_path() {
-  printf '%s/.hb-surfaced-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
+  status_heartbeat_seen_marker_path "$STATE" "$1"
 }
 
-# Record a captain-relevant status after its durable wake has been enqueued.
-mark_surfaced() {  # <status-file>
-  local f=$1 task last
+# The byte offset in <task>'s status log that the heartbeat backstop has already
+# classified, or 0 when it has no usable position. A position rather than an
+# event line lets the backstop catch an event the per-wake path missed,
+# and comparing the last line cannot see an event a later routine append moved
+# past - exactly the masking fm-classify-lib.sh's span read exists to stop. An
+# absent or malformed marker (including one an older watcher wrote as a status
+# line) reads 0, so the log is re-classified and the backstop errs toward
+# surfacing rather than swallowing.
+hb_surfaced_offset() {  # <task>
+  status_presentation_marker_offset "$(_hb_surfaced_path "$1")" "$STATE/$1.status"
+}
+
+# Record a status log as successfully classified through the captured endpoint.
+mark_surfaced() {  # <status-file> <captured-end-offset> <captured-identity>
+  local f=$1 task
+  case "$f" in *.status) ;; *) return 0 ;; esac
   task=$(basename "$f"); task="${task%.status}"
-  last=$(last_status_line "$f")
-  [ -n "$last" ] || return 0
-  status_is_captain_relevant "$last" || return 0
-  printf '%s' "$last" > "$(_hb_surfaced_path "$task")"
+  status_presentation_marker_commit "$(_hb_surfaced_path "$task")" "$f" "$2" "$3"
+}
+
+mark_surface_reported() {  # <status-file> <reported-signature>
+  local f=$1 task
+  task=$(basename "$f"); task="${task%.status}"
+  status_presentation_marker_report "$(_hb_surfaced_path "$task")" "$2"
 }
 
 # Act on a fresh actionable transition from a push-capable backend.
 handle_push_transition() {  # <backend> <session> <record>
-  local backend=$1 session=$2 record=$3 pane_id to window task reason
+  local backend=$1 session=$2 record=$3 pane_id to window task reason span_record rest surface_end='' surface_ident=''
   pane_id=$(fm_transition_pane_id "$record")
   to=$(fm_transition_to_status "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
   window="$session:$pane_id"
   task=$(window_to_task "$window" "$STATE")
-  if status_is_paused "$(last_status_line "$STATE/$task.status")"; then
-    triage_log "absorbed push $to (declared pause, awaiting external): $window"
+  # A declared wait already names the human this transition would report: an
+  # external dependency, or the captain a verified hold transferred the work to.
+  # Either way the wait is durably recorded, so absorb the immediate escalation
+  # and leave the bounded re-surface to the watcher's own pause cadence.
+  if status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")"; then
+    triage_log "absorbed push $to (declared wait, awaiting external or captain): $window"
     fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
     return
   fi
+  span_record=$(status_span_first_actionable_record "$STATE/$task.status" \
+    "$(hb_surfaced_offset "$task")")
+  case $? in
+    0|1) surface_end=${span_record%%$'\t'*}; rest=${span_record#*$'\t'}; surface_ident=${rest%%$'\t'*} ;;
+  esac
   reason="stale: $window (herdr: agent $to - waiting on human, escalated immediately, not via wedge timer)"
-  # A deferred enqueue leaves the transition uncommitted so the next event cycle
-  # re-delivers and retries it, instead of committing (consuming) an edge whose
-  # wake never reached the queue.
-  if wake_enqueue stale "$window" "$reason"; then
-    fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
-    mark_surfaced "$STATE/$task.status"
-    wake "$reason"
-  fi
+  fm_wake_append stale "$window" "$reason" || exit 1
+  fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
+  mark_surfaced "$STATE/$task.status" "$surface_end" "$surface_ident"
+  wake "$reason"
 }
