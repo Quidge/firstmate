@@ -711,16 +711,25 @@ test_provably_working_signal_absorbed() {
 }
 
 test_benign_marker_failure_wakes_after_prior_enqueue_failure() {
-  local dir state fakebin out status_file pid i=0
+  local dir state fakebin out status_file pid real_mktemp i=0
   dir=$(make_case benign-marker-fallback); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   status_file="$state/task.status"
+  real_mktemp=$(command -v mktemp)
+  cat > "$fakebin/mktemp" <<EOF
+#!/bin/sh
+case "\${1:-}" in
+  "$state/.watcher-down.tmp."*) [ -e "$state/.fail-marker-publish" ] && exit 1 ;;
+esac
+exec "$real_mktemp" "\$@"
+EOF
+  chmod +x "$fakebin/mktemp"
   export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
   export FM_WAKE_APPEND_RETRIES=1
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
   unset FM_WAKE_APPEND_RETRIES
   wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited before fault injection"; }
-  mkdir "$state/.watcher-down"
+  touch "$state/.fail-marker-publish"
   touch "$state/.afk"
   printf 'working: compiling step 2\n' > "$status_file"
   while [ "$i" -lt 100 ] && ! grep -F "wake enqueue deferred (kind=signal" "$state/.watch-triage.log" >/dev/null 2>&1; do
@@ -730,8 +739,7 @@ test_benign_marker_failure_wakes_after_prior_enqueue_failure() {
   done
   grep -F "wake enqueue deferred (kind=signal" "$state/.watch-triage.log" >/dev/null 2>&1 \
     || { reap "$pid"; fail "watcher did not reach the injected enqueue failure"; }
-  rm -f "$state/.afk"
-  rmdir "$state/.watcher-down"
+  rm -f "$state/.afk" "$state/.fail-marker-publish"
   mkdir "$state/.seen-task_status"
   wait_for_exit "$pid" 100 || { reap "$pid"; fail "benign marker failure did not wake after an earlier enqueue failure"; }
   grep -F "signal: $status_file" "$out" >/dev/null \
