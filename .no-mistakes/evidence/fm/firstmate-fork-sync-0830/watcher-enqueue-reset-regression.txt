@@ -1,0 +1,15 @@
+# Regression proof: watcher enqueue reset before benign fallback (commit 486f778)
+
+Fork-side fix in bin/fm-watch.sh:1516 adds `signal_enqueue_ok=1` before the
+benign-marker fallback enqueue loop. Regression test:
+tests/fm-watch-triage.test.sh :: test_benign_marker_failure_wakes_after_prior_enqueue_failure
+
+## WITH fix (current HEAD 0cda047) — expect PASS
+/home/lirum/.no-mistakes/worktrees/5dc625baef9a/01M1A0MTDWF31Y95SGYZ0ZD9N2/bin/fm-classify-lib.sh: line 1024: /tmp/fm-watch-triage-tests.n2j4KB/benign-marker-fallback/state/.seen-task_status: Is a directory
+ok - benign marker fallback resets enqueue state for each poll cycle
+exit=0
+
+## WITHOUT fix (fix line removed) — expect FAIL, reproducing lost wake notification
+/home/lirum/.no-mistakes/worktrees/5dc625baef9a/01M1A0MTDWF31Y95SGYZ0ZD9N2/bin/fm-classify-lib.sh: line 1024: /tmp/fm-watch-triage-tests.JM1CWb/benign-marker-fallback/state/.seen-task_status: Is a directory
+not ok - benign marker fallback did not print its wake reason
+exit=1
