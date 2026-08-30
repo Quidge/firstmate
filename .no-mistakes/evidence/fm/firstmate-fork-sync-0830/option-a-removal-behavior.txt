@@ -1,0 +1,18 @@
+Evidence: fork Option-A wake-enqueue removal -> upstream raw fm_wake_append + fail-closed
+Branch: fm/firstmate-fork-sync-0830   target: 8b95e11
+======================================================================
+
+## 1. No dangling references to the removed mechanism (bin/ tests/ docs/)
+  (none) -- mechanism removed at every call site and definition
+
+## 2. handle_push_transition adopts raw fm_wake_append + fail-closed
+     (tests/fm-supervision-events.test.sh, push-transition assertions)
+ok - handle_push_transition: a blocked crew enqueues a stale wake naming its window and wakes the supervisor
+ok - handle_push_transition: enqueue failure cannot commit the Herdr dedupe marker
+ok - handle_push_transition: a declared-pause crew is absorbed (no fast wake), left to the poll loop's long cadence
+ok - handle_push_transition: a captain-held crew is absorbed (no fast wake), left to the poll loop's long cadence
+# fm-supervision-events.test.sh: all assertions passed
+
+## 3. Watcher fails closed on queue publication failure (was Option-A recovery-handoff)
+     (tests/fm-pr-check-security.test.sh :: test_retirement_queue_failure_and_receipt_tampering)
+ok - queue failure and untrusted receipts preserve canonical poll evidence
