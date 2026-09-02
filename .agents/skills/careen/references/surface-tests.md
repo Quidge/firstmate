@@ -2,6 +2,7 @@
 
 For a fact already routed to a surface, the bar that keeps it there.
 Each surface reads: earns its place only if, otherwise falls to, and the watch-out that keeps the pass honest.
+When an entry fails a surface's bar, re-enter G4 so its kind selects the ladder before applying the fallback below, with G3 still gating every project-side or public destination.
 The move a passing-elsewhere fact makes is bounded by the write verbs and autonomy split in `SKILL.md`.
 
 ## main captain.md
@@ -14,14 +15,13 @@ Watch: captain-pinned entries are exempt - re-proposing them is nagging, not cur
 ## captain-shared.md
 
 Earns its place only if it is a shared captain preference or directive that two or more homes must obey in essentially every session.
-Fleet-general operational or machinery facts follow their tracked owner under `secondmate-provisioning`, not this surface.
-Falls to: the single obeying home's `captain.md`.
+Falls to: G4 routes a preference or directive narrowed to one home to that home's `captain.md`, a home-local fact to that home's `learnings.md`, and a fleet-general operational or machinery fact to its tracked owner under `secondmate-provisioning`.
 Watch: the most expensive file in the fleet, since every byte is paid by every inheriting home, and a removal removes it from all homes at once - the default for shared entries is keep, and any removal is a propose-first move.
 
 ## a secondmate's captain.md
 
 Earns its place only if it is a domain-scoped preference or authority needed across most of that home's sessions.
-Falls to: a `captain-shared.md` proposal for a cross-domain or shared captain preference or directive, a local skill there, or the project side if stranger-safe.
+Falls to: G4 routes a cross-domain or shared captain preference or directive to a `captain-shared.md` proposal, a home-local learned fact to that home's `learnings.md`, and a fleet-general operational or machinery fact to its tracked owner under `secondmate-provisioning`, while conditional knowledge falls to a local skill or, when G3 passes, the project side.
 Watch: the main firstmate cannot edit it directly - a move into it is a routed cross-home request.
 
 ## charter
