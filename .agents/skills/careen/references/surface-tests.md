@@ -6,8 +6,8 @@ The move a passing-elsewhere fact makes is bounded by the write verbs and autono
 
 ## main captain.md
 
-Earns its place only if it is a captain preference or standing authority exercised by this home, needed in essentially every main session, or a safety or authority floor.
-Falls to: `captain-shared.md` only for a shared captain preference or directive that two or more homes must obey, a secondmate home (its domain), `learnings.md` (a home-local fact, not a preference), or a local skill (situational).
+Earns its place only if it is a home-local captain preference or standing authority exercised by this home, needed in essentially every main session, or a safety or authority floor.
+Falls to: `captain-shared.md` only for a shared captain preference or directive that two or more homes must obey, another home's `captain.md` or `learnings.md` for that home's local knowledge, this home's `learnings.md` for a home-local fact, or a local skill for situational knowledge.
 General or operational facts needed by multiple homes follow their tracked owner under `secondmate-provisioning`.
 Watch: captain-pinned entries are exempt - re-proposing them is nagging, not curation.
 
@@ -21,13 +21,14 @@ Watch: the most expensive file in the fleet, since every byte is paid by every i
 ## a secondmate's captain.md
 
 Earns its place only if it is a domain-scoped preference or authority needed across most of that home's sessions.
-Falls to: a local skill there, or the project side if stranger-safe.
+Falls to: a `captain-shared.md` proposal for a cross-domain or shared captain preference or directive, a local skill there, or the project side if stranger-safe.
 Watch: the main firstmate cannot edit it directly - a move into it is a routed cross-home request.
 
 ## charter
 
 Earns its place only if it defines what the role is: identity, scope boundary, or safety floor.
-Falls to: that home's `captain.md` (preference) or `learnings.md` (fact).
+Falls to: that home's `captain.md` for a home-local preference or authority, a `captain-shared.md` proposal for a cross-domain or shared captain preference or directive, or that home's `learnings.md` for a home-local fact.
+Fleet-general operational or machinery facts follow their tracked owner under `secondmate-provisioning`.
 Watch: delivered at launch and not re-read, so a `/clear` drops it until relaunch - careen routes identity here and nothing else, which makes that reanchor gap moot for this skill.
 
 ## crew-dispatch.json, projects.md, secondmates.md, config/*
@@ -38,8 +39,8 @@ Watch: do not duplicate a rule these surfaces already own into prose.
 
 ## learnings.md
 
-Earns its place only if it is an operational fact the home needs unprompted, recurring, with no nameable trigger.
-Falls to: the owning secondmate's own `learnings.md`, a local skill once a trigger is nameable, the project repo when the repo-subject smell fires, or the archive (stow's decay clock owns staleness, not careen).
+Earns its place only if it is a home-local operational fact the home needs unprompted, recurring, with no nameable trigger.
+Falls to: the owning secondmate's own `learnings.md`, the tracked owner under `secondmate-provisioning` for a fleet-general operational or machinery fact, a local skill once a trigger is nameable, the project repo when the repo-subject smell fires, or the archive under `/stow`'s staleness rules.
 Watch: this is where careen and stow meet - careen decides the right place, stow decides whether it is still true.
 
 ## docs/, skill references/, --help - the sub-basement
@@ -49,10 +50,9 @@ This is where push-down recurses: careen applies its own test inside every skill
 
 ## user skill (per-home, untracked)
 
-Earns its place only if it is conditional on a nameable trigger, private or home-scoped, and fat enough to matter (roughly fifty or more tokens, stow's bar).
+Earns its place only if it meets `/stow`'s user-skill inclusion bar.
 Falls to: a project skill (stranger-safe), or a shared tracked skill (every-firstmate-user value, via a deliberate PR).
-Watch: the description line is the entire trigger, and a skill nothing loads is a grave.
-This tier is the idiom for firstmate-specific skills that belong to no project - untracked, excluded through the home's repository-local exclude file, harness-discovered, and needing no tracked-material change by construction.
+Watch: `/stow` owns this surface's trigger, storage, exclusion, and discovery contract.
 
 ## project-side surfaces
 
