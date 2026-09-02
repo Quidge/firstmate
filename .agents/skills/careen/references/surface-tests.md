@@ -33,8 +33,7 @@ Watch: delivered at launch and not re-read, so a `/clear` drops it until relaunc
 
 ## crew-dispatch.json, projects.md, secondmates.md, config/*
 
-Earn their place only if a machine or a fixed lifecycle moment consults the surface.
-The sharpest test: if no defined moment reads the surface, the surface does not exist for routing purposes.
+Their owners' consulting-moment contracts are their inclusion tests.
 Watch: do not duplicate a rule these surfaces already own into prose.
 
 ## learnings.md
@@ -49,11 +48,11 @@ Watch: this is where careen and stow meet - careen decides the right place, stow
 Earns its place only if it is deep contract or reference detail that an always-loaded layer points to.
 This is where push-down recurses: careen applies its own test inside every skill it audits, keeping `SKILL.md` a pointer and pushing depth into `references/`.
 
-## user skill (per-home, untracked)
+## user skill
 
-Earns its place only if it meets `/stow`'s user-skill inclusion bar.
-Falls to: a project skill (stranger-safe), or a shared tracked skill (every-firstmate-user value, via a deliberate PR).
-Watch: `/stow` owns this surface's trigger, storage, exclusion, and discovery contract.
+Earns its place only under `/stow`'s owned user-skill contract.
+Falls to: a project skill when G3 passes, or a shared tracked skill under `firstmate-coding-guidelines`.
+Watch: `/stow` is the sole owner of this surface's mechanics.
 
 ## project-side surfaces
 

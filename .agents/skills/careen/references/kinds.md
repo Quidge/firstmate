@@ -13,7 +13,7 @@ Every project-side or public home in this table requires G3 to pass first; a fai
 | Role identity / scope / safety floor | "this steward role never applies to the production host" | charter |
 | Dispatch / routing rule | a given task kind to a higher-reasoning crewmate profile | `crew-dispatch.json` (exits at G2) |
 | Per-project fleet posture | delivery mode + yolo | `projects.md` (exits at G2) |
-| Work-routing scope | "route this domain's feature work here" | `secondmates.md` scope field |
+| Work-routing scope | "route this domain's feature work here" | `secondmates.md` (exits at G2) |
 | Enforceable rule | worktree isolation | fail-closed guard (exits at G2; version-controlled machinery is flag-only) |
 | Secret | a pairing token | `.env` (exits at G2) |
 | Home-local learned fact / gotcha | "a CLI truncates large payloads on this box" | the owning home's `learnings.md` |
@@ -25,7 +25,7 @@ Every project-side or public home in this table requires G3 to pass first; a fai
 | Project direction / human workflow / overview | goals; contributor how-to | VISION / CONTRIBUTING / README (audience decides) |
 | Fleet-to-project relationship | "this project merges rebase-only"; a review-checklist protocol | G6 - by actor |
 | Command mechanics | a command's invocation details | `firstmate-coding-guidelines` (exits at G2) |
-| Task-scoped | one item's decisions / findings / context | backlog note to report to brief (exits at G1) |
+| Task-scoped | one item's decisions / findings / context | G1 |
 
 Two parallel ladders fall out once audience is fixed firstmate-only and representation is prose:
 

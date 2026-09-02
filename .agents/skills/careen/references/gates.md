@@ -18,7 +18,7 @@ Prose is the representation of last resort.
 Ask, in order, whether a non-prose owner already fits:
 
 - An enforceable rule becomes a fail-closed guard, where the rule turns unviolable and no prose tier carries it - but only within the enforcement scope limit in `SKILL.md`: a `config/`-oriented, home-local destination is in scope, while anything that would change firstmate's version-controlled machinery is flagged to the captain, never performed.
-- A choice consulted at a fixed lifecycle moment belongs to the surface that moment reads: `crew-dispatch.json` at worker selection, `data/projects.md` at intake or merge, `config/*` for operating toggles.
+- Fixed-lifecycle choices follow the consulting-moment contracts owned by `crew-dispatch.json`, `data/projects.md`, and `config/*`.
 - Command mechanics follow the placement contract owned by `firstmate-coding-guidelines`.
 - A secret belongs in `.env`, only ever.
 
@@ -48,7 +48,7 @@ The remainder split by side at G5, and the relationship cell resolves at G6.
 Reached when G3 passed and the kind is project-shareable.
 Apply the conditional reader, purpose, and depth bars in [`surface-tests.md`](surface-tests.md) only among the surfaces the project actually has; that file also owns the no-suitable-surface outcome.
 
-Knowledge about firstmate-the-product that is useful to every firstmate user goes to firstmate's shared tracked material through the PR path; the within-repo half of that decision is owned by `firstmate-coding-guidelines`, which this skill points at and never restates.
+Firstmate shared tracked material follows `firstmate-coding-guidelines`.
 
 Delivery is always a crew ship task; firstmate never writes a project repo.
 
@@ -58,8 +58,8 @@ The cell where scope is one project and audience is firstmate-only.
 Its homes already exist and, obeying push-down, they sit low rather than up in `captain.md`.
 Route by the actor who needs the fact at the moment it is needed:
 
-- The main firstmate at intake or merge: standing delivery posture, ownership, and routing go to `data/projects.md`; "when to route work here" goes to the `scope:` field in `data/secondmates.md`; a bare operating fact ("this project rejects squash merges") goes to the main `data/learnings.md`.
+- The main firstmate: standing delivery posture, ownership, and routing go to `data/projects.md`; work-routing scope goes to `data/secondmates.md`; a bare operating fact goes to the main `data/learnings.md`.
 - The owning secondmate (its review-checklist flow and domain conventions): that home's own `captain.md` for a home-local preference or authority, or its `learnings.md` for a home-local learned fact - the whole reason dedicated secondmate homes exist.
 - Crewmates on that project read briefs, not tiers, so the durable home must sit wherever the brief-writer reads at brief-writing time - one of the above.
   Never push a fact below the brief-writer's sight line.
-- Fat and conditional relationship lore goes to a per-project local user skill in the owning home (untracked; stow owns that offload destination's mechanics).
+- Fat and conditional relationship lore goes to a per-project local user skill in the owning home; `/stow` owns that destination's offload mechanics.

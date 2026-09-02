@@ -22,7 +22,7 @@ Route each durable fact to the lowest surface still guaranteed-loaded for every 
    The four questions - KIND, then REPRESENTATION before location, then AUDIENCE for the side, then SCOPE and LOAD-MOMENT for the rung - are the conceptual ordering, while G1-G6 is the operational walk, with representation and secrets applied as a pre-filter ahead of durability.
    The kind taxonomy is [`references/kinds.md`](references/kinds.md); the bar each surface applies is [`references/surface-tests.md`](references/surface-tests.md).
 3. Decide the move's class against the autonomy split below, then apply the matching write verb - or flag it when the destination does not yet exist.
-4. When a move touches `data/captain.md`, `data/captain-shared.md`, or `data/learnings.md`, defer to `/stow`'s tier markers, decay clocks, and write boundaries: stamp the relocation per `/stow` and let `/stow` own staleness.
+4. When a move touches `data/captain.md`, `data/captain-shared.md`, or `data/learnings.md`, defer to `/stow`'s owned memory contract.
 5. Report the pass in the completion receipt below.
 
 ## The lattice
@@ -57,8 +57,7 @@ Careen is fleet-wide, but the main home never writes another home's files.
 When a main-home pass finds knowledge that belongs to a secondmate's domain - a domain-scoped preference or authority, a learned fact about that domain, a relationship fact the owning secondmate is the right actor for - it does not edit that secondmate's memory.
 It packages the knowledge and, once the captain approves the route (cross-home is propose-first), hands it to that secondmate as a cross-home request: the information plus the explicit instruction to "run `/careen` over this within your own domain".
 
-That handoff rides the normal steering path - `bin/fm-send.sh fm-<id> "<packaged knowledge + instruction>"` - the same way `/stow`'s cascade reaches a live secondmate; read the routed reply from that home's status or the document it points to, never from its chat.
-`secondmate-provisioning` owns the transport, remote routes, and delivery-confirmation contract; point at it rather than restating it.
+That handoff rides the normal cross-home steering path owned end to end by `secondmate-provisioning`.
 
 Each home careens what it owns.
 A secondmate running `/careen` - whether the captain invokes it there or the main home routes knowledge to it - operates on its own lattice: its own `captain.md`, `learnings.md`, and projects, under its own autonomy split.
@@ -69,7 +68,7 @@ Home isolation and the standing authority rules hold throughout: a secondmate st
 Careen's push into enforcement and config (G2) is limited to `config/`-oriented, home-local destinations.
 Turning an enforceable rule into a fail-closed guard is in scope only when the destination is such a config surface.
 Anything that would change firstmate's version-controlled machinery - `fm-spawn.sh` and its kin - is out of scope: careen flags the opportunity in the receipt and never makes the change itself.
-That machinery is shared tracked material, altered only through a deliberate repository change, never a knowledge-routing pass.
+`firstmate-coding-guidelines` owns the resulting shared-tracked-material change.
 
 ## Side rules
 
@@ -91,7 +90,7 @@ Report the pass in plain captain-facing language, mirroring `/stow`'s receipt:
 
 - Each direct move made: the fact, its old home, its new home, and the one-line reason.
 - Each proposal awaiting the captain - pinned relocations, authority-shaped moves, cross-home routes (naming the secondmate), captain-shared removals, and project-side ship tasks - with the fact, its destination, and the reason.
-- Each secondmate a route was handed to, and where its reply will return.
+- Each secondmate a route was handed to.
 - Each enforcement opportunity flagged, as an in-scope `config/` destination or an out-of-scope version-controlled-machinery change left untouched.
 - What was examined and deliberately left in place, including every pin respected.
 
