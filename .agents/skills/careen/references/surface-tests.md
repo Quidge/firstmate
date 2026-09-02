@@ -8,27 +8,25 @@ The move a passing-elsewhere fact makes is bounded by the write verbs and autono
 ## main captain.md
 
 Earns its place only if it is a home-local captain preference or standing authority exercised by this home, needed in essentially every main session, or a safety or authority floor.
-Falls to: `captain-shared.md` only for a shared captain preference or directive that two or more homes must obey, another home's `captain.md` or `learnings.md` for that home's local knowledge, this home's `learnings.md` for a home-local fact, or a local skill for situational knowledge.
-General or operational facts needed by multiple homes follow their tracked owner under `secondmate-provisioning`.
+Falls to: re-enter G4 so kind selects its canonical ladder.
 Watch: captain-pinned entries are exempt - re-proposing them is nagging, not curation.
 
 ## captain-shared.md
 
 Earns its place only if it is a shared captain preference or directive that two or more homes must obey in essentially every session.
-Falls to: G4 routes a preference or directive narrowed to one home to that home's `captain.md`, a home-local fact to that home's `learnings.md`, and a fleet-general operational or machinery fact to its tracked owner under `secondmate-provisioning`.
+Falls to: re-enter G4 so kind selects its canonical ladder.
 Watch: the most expensive file in the fleet, since every byte is paid by every inheriting home, and a removal removes it from all homes at once - the default for shared entries is keep, and any removal is a propose-first move.
 
 ## a secondmate's captain.md
 
 Earns its place only if it is a domain-scoped preference or authority needed across most of that home's sessions.
-Falls to: G4 routes a cross-domain or shared captain preference or directive to a `captain-shared.md` proposal, a home-local learned fact to that home's `learnings.md`, and a fleet-general operational or machinery fact to its tracked owner under `secondmate-provisioning`, while conditional knowledge falls to a local skill or, when G3 passes, the project side.
+Falls to: re-enter G4 so kind selects its canonical ladder.
 Watch: the main firstmate cannot edit it directly - a move into it is a routed cross-home request.
 
 ## charter
 
 Earns its place only if it defines what the role is: identity, scope boundary, or safety floor.
-Falls to: that home's `captain.md` for a home-local preference or authority, a `captain-shared.md` proposal for a cross-domain or shared captain preference or directive, or that home's `learnings.md` for a home-local fact.
-Fleet-general operational or machinery facts follow their tracked owner under `secondmate-provisioning`.
+Falls to: re-enter G4 so kind selects its canonical ladder.
 Watch: delivered at launch and not re-read, so a `/clear` drops it until relaunch - careen routes identity here and nothing else, which makes that reanchor gap moot for this skill.
 
 ## crew-dispatch.json, projects.md, secondmates.md, config/*
@@ -39,7 +37,7 @@ Watch: do not duplicate a rule these surfaces already own into prose.
 ## learnings.md
 
 Earns its place only if it is a home-local operational fact the home needs unprompted, recurring, with no nameable trigger.
-Falls to: the owning secondmate's own `learnings.md`, the tracked owner under `secondmate-provisioning` for a fleet-general operational or machinery fact, a local skill once a trigger is nameable, the project repo when G3 passes and the repo-subject smell fires, or the archive under `/stow`'s staleness rules.
+Falls to: re-enter G4 so kind selects its canonical ladder, while `/stow` owns staleness archival.
 When G3 fails, route project-relationship knowledge firstmate-side through G6.
 Watch: this is where careen and stow meet - careen decides the right place, stow decides whether it is still true.
 
@@ -51,7 +49,7 @@ This is where push-down recurses: careen applies its own test inside every skill
 ## user skill
 
 Earns its place only under `/stow`'s owned user-skill contract.
-Falls to: a project skill when G3 passes, or a shared tracked skill under `firstmate-coding-guidelines`.
+Falls to: re-enter G4 so kind selects its canonical ladder.
 Watch: `/stow` is the sole owner of this surface's mechanics.
 
 ## project-side surfaces
