@@ -68,7 +68,8 @@ EOF
 project_before=$(cat "$PROJECT_AGENTS")
 out=$(
   cd "$HOME_FIXTURE" &&
-    pi --print --approve --no-session --no-context-files --no-extensions \
+    FM_HOME="$HOME_FIXTURE" FM_ROOT_OVERRIDE="$ROOT" \
+      pi --print --approve --no-session --no-context-files --no-extensions \
       --no-skills --skill "$ROOT/.agents/skills" --tools read,bash,edit,write \
       --model "$MODEL" --thinking high \
       "Invoke the careen skill for this disposable Firstmate home. Load careen and every owner it directs you to. Examine only data/captain.md, data/captain-shared.md, data/learnings.md, and projects/acme/AGENTS.md. Apply every autonomous direct move that careen authorizes, preserve every propose-first item in place, and do not write the project repo. The acme direnv rule is stranger-safe, project-intrinsic, and needed every project session. Finish with exactly these machine-readable receipt lines, filling the expected integer counts: RESULT direct_moves=<n> proposals=<n>; MOVE source=data/captain.md destination=data/learnings.md; PROPOSAL source=data/captain-shared.md destination=data/learnings.md; PROPOSAL source=data/learnings.md destination=projects/acme/AGENTS.md; PROJECT_WRITES=<n>. Do not emit any other RESULT, MOVE, PROPOSAL, or PROJECT_WRITES lines."
@@ -90,6 +91,7 @@ case "$captain_after" in
 esac
 assert_contains "$captain_after" "Keep local work summaries concise." "home-local preference did not remain in captain.md"
 assert_contains "$learnings_after" "quill CLI fails unless TMPDIR is set." "home-local fact did not move to learnings.md"
+assert_contains "$learnings_after" "quill CLI fails unless TMPDIR is set. <!--a:$TODAY-->" "home-local fact lost its aging marker during relocation"
 # shellcheck disable=SC2016
 assert_contains "$learnings_after" 'prefix every command with `direnv exec .`.' "project-side proposal was removed before approval"
 assert_contains "$shared_after" "ink CLI truncates payloads over 4 KB." "captain-shared removal happened before approval"
