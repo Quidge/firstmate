@@ -7,12 +7,14 @@ The move a passing-elsewhere fact makes is bounded by the write verbs and autono
 ## main captain.md
 
 Earns its place only if it is a captain preference or standing authority exercised by this home, needed in essentially every main session, or a safety or authority floor.
-Falls to: `captain-shared.md` (two or more homes need it), a secondmate home (its domain), `learnings.md` (a fact, not a preference), or a local skill (situational).
+Falls to: `captain-shared.md` only for a shared captain preference or directive that two or more homes must obey, a secondmate home (its domain), `learnings.md` (a home-local fact, not a preference), or a local skill (situational).
+General or operational facts needed by multiple homes follow their tracked owner under `secondmate-provisioning`.
 Watch: captain-pinned entries are exempt - re-proposing them is nagging, not curation.
 
 ## captain-shared.md
 
-Earns its place only if two or more homes must obey it in essentially every session.
+Earns its place only if it is a shared captain preference or directive that two or more homes must obey in essentially every session.
+Fleet-general operational or machinery facts follow their tracked owner under `secondmate-provisioning`, not this surface.
 Falls to: the single obeying home's `captain.md`.
 Watch: the most expensive file in the fleet, since every byte is paid by every inheriting home, and a removal removes it from all homes at once - the default for shared entries is keep, and any removal is a propose-first move.
 
