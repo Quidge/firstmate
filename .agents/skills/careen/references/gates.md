@@ -28,7 +28,7 @@ Only judgment, preference, context, and lore continue past G2 as prose.
 
 Ask: would a contributor who has never heard of firstmate find this line true, meaningful, and appropriate in the project's own repo?
 Any of these failing sends it firstmate-side: it mentions the captain, his authority, or his review habits; it names fleet machinery, routing, delivery posture, merge authority, quota, or house vocabulary; or it would leak strategy.
-A passing example is oikos's "prefix every command with `direnv exec .`".
+A passing example is a project's "prefix every command with `direnv exec .`".
 
 The repo-subject smell: a learning whose subject is a version-controlled project - rather than, say, a tool's behavior on the box - is a strong but not certain smell that it belongs project-side; check every repo-subject learnings entry against this test.
 
@@ -58,8 +58,8 @@ The cell where scope is one project and audience is firstmate-only.
 Its homes already exist and, obeying push-down, they sit low rather than up in `captain.md`.
 Route by the actor who needs the fact at the moment it is needed:
 
-- The main firstmate at intake or merge: standing delivery posture, ownership, and routing go to `data/projects.md`; "when to route work here" goes to the `scope:` field in `data/secondmates.md`; a bare operating fact ("myrmex rejects squash") goes to the main `data/learnings.md`.
-- The owning secondmate (apply-checkbox flow, domain conventions): that home's own `captain.md` for a home-local preference or authority, or its `learnings.md` for a home-local learned fact - the whole reason dedicated secondmate homes exist.
+- The main firstmate at intake or merge: standing delivery posture, ownership, and routing go to `data/projects.md`; "when to route work here" goes to the `scope:` field in `data/secondmates.md`; a bare operating fact ("this project rejects squash merges") goes to the main `data/learnings.md`.
+- The owning secondmate (its review-checklist flow and domain conventions): that home's own `captain.md` for a home-local preference or authority, or its `learnings.md` for a home-local learned fact - the whole reason dedicated secondmate homes exist.
 - Crewmates on that project read briefs, not tiers, so the durable home must sit wherever the brief-writer reads at brief-writing time - one of the above.
   Never push a fact below the brief-writer's sight line.
 - Fat and conditional relationship lore goes to a per-project local user skill in the owning home (untracked; stow owns that offload destination's mechanics).

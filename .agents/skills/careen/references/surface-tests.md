@@ -52,7 +52,7 @@ This is where push-down recurses: careen applies its own test inside every skill
 Earns its place only if it is conditional on a nameable trigger, private or home-scoped, and fat enough to matter (roughly fifty or more tokens, stow's bar).
 Falls to: a project skill (stranger-safe), or a shared tracked skill (every-firstmate-user value, via a deliberate PR).
 Watch: the description line is the entire trigger, and a skill nothing loads is a grave.
-This tier is the idiom for firstmate-specific skills that belong to no project - untracked, excluded through the home's repository-local exclude file, harness-discovered, and zero fork divergence by construction.
+This tier is the idiom for firstmate-specific skills that belong to no project - untracked, excluded through the home's repository-local exclude file, harness-discovered, and needing no tracked-material change by construction.
 
 ## project-side surfaces
 
