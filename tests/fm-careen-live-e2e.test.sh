@@ -89,6 +89,7 @@ case "$captain_after" in
 esac
 assert_contains "$captain_after" "Keep local work summaries concise." "home-local preference did not remain in captain.md"
 assert_contains "$learnings_after" "quill CLI fails unless TMPDIR is set." "home-local fact did not move to learnings.md"
+# shellcheck disable=SC2016
 assert_contains "$learnings_after" 'prefix every command with `direnv exec .`.' "project-side proposal was removed before approval"
 assert_contains "$shared_after" "ink CLI truncates payloads over 4 KB." "captain-shared removal happened before approval"
 [ "$project_after" = "$project_before" ] || fail "careen wrote the project repo directly"
