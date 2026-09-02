@@ -34,6 +34,7 @@ CAPTAIN="$HOME_FIXTURE/data/captain.md"
 SHARED="$HOME_FIXTURE/data/captain-shared.md"
 LEARNINGS="$HOME_FIXTURE/data/learnings.md"
 PROJECT_AGENTS="$HOME_FIXTURE/projects/acme/AGENTS.md"
+TODAY=$(date -u +%F)
 
 cleanup() {
   rm -rf "$LAB"
@@ -41,11 +42,11 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$HOME_FIXTURE/data" "$HOME_FIXTURE/projects/acme"
-cat >"$CAPTAIN" <<'EOF'
+cat >"$CAPTAIN" <<EOF
 # Captain preferences
 
 - Keep local work summaries concise.
-- On this workstation, the quill CLI fails unless TMPDIR is set.
+- On this workstation, the quill CLI fails unless TMPDIR is set. <!--a:$TODAY-->
 EOF
 cat >"$SHARED" <<'EOF'
 # Shared captain preferences
@@ -70,7 +71,7 @@ out=$(
     pi --print --approve --no-session --no-context-files --no-extensions \
       --no-skills --skill "$ROOT/.agents/skills" --tools read,bash,edit,write \
       --model "$MODEL" --thinking high \
-      "Invoke the careen skill for this disposable Firstmate home. Load careen and every owner it directs you to. Examine only data/captain.md, data/captain-shared.md, data/learnings.md, and projects/acme/AGENTS.md. Apply every autonomous direct move that careen authorizes, preserve every propose-first item in place, and do not write the project repo. Treat the four fixture statements as durable and unpinned. The acme direnv rule is stranger-safe, project-intrinsic, and needed every project session. Finish with exactly these machine-readable receipt lines, filling the expected integer counts: RESULT direct_moves=<n> proposals=<n>; MOVE source=data/captain.md destination=data/learnings.md; PROPOSAL source=data/captain-shared.md destination=data/learnings.md; PROPOSAL source=data/learnings.md destination=projects/acme/AGENTS.md; PROJECT_WRITES=<n>. Do not emit any other RESULT, MOVE, PROPOSAL, or PROJECT_WRITES lines."
+      "Invoke the careen skill for this disposable Firstmate home. Load careen and every owner it directs you to. Examine only data/captain.md, data/captain-shared.md, data/learnings.md, and projects/acme/AGENTS.md. Apply every autonomous direct move that careen authorizes, preserve every propose-first item in place, and do not write the project repo. The acme direnv rule is stranger-safe, project-intrinsic, and needed every project session. Finish with exactly these machine-readable receipt lines, filling the expected integer counts: RESULT direct_moves=<n> proposals=<n>; MOVE source=data/captain.md destination=data/learnings.md; PROPOSAL source=data/captain-shared.md destination=data/learnings.md; PROPOSAL source=data/learnings.md destination=projects/acme/AGENTS.md; PROJECT_WRITES=<n>. Do not emit any other RESULT, MOVE, PROPOSAL, or PROJECT_WRITES lines."
 ) || fail "Pi skill run failed"
 
 captain_after=$(cat "$CAPTAIN")
