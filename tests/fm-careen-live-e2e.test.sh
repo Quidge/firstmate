@@ -26,6 +26,13 @@ assert_contains() {
   esac
 }
 
+assert_not_contains() {
+  local haystack=$1 needle=$2 message=$3
+  case "$haystack" in
+    *"$needle"*) fail "$message" ;;
+  esac
+}
+
 command -v pi >/dev/null 2>&1 || fail "pi not found"
 
 LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-careen-live.XXXXXX")
@@ -33,7 +40,9 @@ HOME_FIXTURE="$LAB/home"
 CAPTAIN="$HOME_FIXTURE/data/captain.md"
 SHARED="$HOME_FIXTURE/data/captain-shared.md"
 LEARNINGS="$HOME_FIXTURE/data/learnings.md"
+PROJECTS="$HOME_FIXTURE/projects"
 PROJECT_AGENTS="$HOME_FIXTURE/projects/acme/AGENTS.md"
+PROJECTS_BEFORE="$LAB/projects-before"
 TODAY=$(date -u +%F)
 
 cleanup() {
@@ -66,6 +75,7 @@ cat >"$PROJECT_AGENTS" <<'EOF'
 EOF
 
 project_before=$(cat "$PROJECT_AGENTS")
+cp -R "$PROJECTS" "$PROJECTS_BEFORE"
 out=$(
   cd "$HOME_FIXTURE" &&
     FM_HOME="$HOME_FIXTURE" FM_ROOT_OVERRIDE="$ROOT" \
@@ -92,10 +102,12 @@ esac
 assert_contains "$captain_after" "Keep local work summaries concise." "home-local preference did not remain in captain.md"
 assert_contains "$learnings_after" "quill CLI fails unless TMPDIR is set." "home-local fact did not move to learnings.md"
 assert_contains "$learnings_after" "quill CLI fails unless TMPDIR is set. <!--a:$TODAY-->" "home-local fact lost its aging marker during relocation"
+assert_not_contains "$learnings_after" "ink CLI truncates payloads over 4 KB." "captain-shared proposal was copied before approval"
 # shellcheck disable=SC2016
 assert_contains "$learnings_after" 'prefix every command with `direnv exec .`.' "project-side proposal was removed before approval"
 assert_contains "$shared_after" "ink CLI truncates payloads over 4 KB." "captain-shared removal happened before approval"
 [ "$project_after" = "$project_before" ] || fail "careen wrote the project repo directly"
+diff -r "$PROJECTS_BEFORE" "$PROJECTS" >/dev/null || fail "careen changed the project tree before approval"
 
 printf '%s\n' "$out"
 printf 'STATE captain_fact_moved=yes shared_removal_deferred=yes project_route_deferred=yes project_unchanged=yes\n'
