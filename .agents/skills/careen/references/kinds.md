@@ -6,8 +6,8 @@ The relationship kind resolves at G6, and the project-side kinds resolve their d
 
 | Kind | Real example | Home |
 |---|---|---|
-| Captain personal preference / working style | read phone-origin messages charitably | `captain.md` (breadth decides which home's) |
-| Cross-domain captain directive | upstream-sync PR shape | `captain-shared.md` |
+| Home-local captain preference / working style | read phone-origin messages charitably when it applies within one home | that home's `captain.md` |
+| Cross-domain or shared captain preference / directive | read phone-origin messages charitably when it applies fleet-wide; upstream-sync PR shape | `captain-shared.md` |
 | Standing authority grant | "MAY run terraform plan; apply needs explicit word" | `captain.md` of the home that exercises it |
 | Role identity / scope / safety floor | "homeworld-steward never applies to the live box" | charter |
 | Dispatch / routing rule | lavish sessions to an opus crewmate | `crew-dispatch.json` (exits at G2) |
@@ -15,7 +15,8 @@ The relationship kind resolves at G6, and the project-side kinds resolve their d
 | Work-routing scope | "route Oikos feature work here" | `secondmates.md` scope field |
 | Enforceable rule | worktree isolation | fail-closed guard (exits at G2; fork machinery is flag-only) |
 | Secret | Relay pairing token | `.env` (exits at G2) |
-| Learned fact / gotcha | "gh-axi truncates large payloads" | the owning home's `learnings.md` (per-home ladder) |
+| Home-local learned fact / gotcha | "gh-axi truncates large payloads" | the owning home's `learnings.md` |
+| Fleet-general operational / machinery fact | recurring `fm-send` behavior | its tracked owner under `secondmate-provisioning` |
 | Reusable technique with a trigger | serving a board over the tailnet | a user skill |
 | Deep contract / reference detail | an adapter's quirk sheet | `docs/` or a skill's `references/`, pointed to from above |
 | Project-intrinsic, every-session | "prefix commands with `direnv exec .`" | project `AGENTS.md` |
@@ -25,9 +26,9 @@ The relationship kind resolves at G6, and the project-side kinds resolve their d
 | Command mechanics | exact flags, paths | `--help` / header (exits at G2) |
 | Task-scoped | one item's decisions / findings / context | backlog note to report to brief (exits at G1) |
 
-Two parallel per-home ladders fall out once audience is fixed firstmate-only and representation is prose:
+Two parallel ladders fall out once audience is fixed firstmate-only and representation is prose:
 
-- The preference/authority ladder: `captain.md` to `captain-shared.md` to a secondmate's `captain.md` to charter.
-- The learned-facts ladder: main `learnings.md` to each secondmate home's own `learnings.md`.
+- The preference/authority ladder follows breadth across the `captain.md`, `captain-shared.md`, and charter rows above.
+- The learned-facts ladder follows ownership across the `learnings.md` and tracked-owner rows above.
 
 A learned fact and a captain preference are different kinds riding parallel ladders; do not merge them onto one rung.

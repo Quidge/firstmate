@@ -46,12 +46,10 @@ The remainder split by side at G5, and the relationship cell resolves at G6.
 ## G5 - The project or public side: audience first, then depth
 
 Reached when G3 passed and the kind is project-shareable.
-Split by reader among the surfaces the project actually has, never assuming the full VISION / README / CONTRIBUTING / AGENTS.md quartet - many projects carry only a subset.
-Within the agent-facing surface, apply the depth bars in [`surface-tests.md`](surface-tests.md): every-session to the project `AGENTS.md`, situational to a project skill, deep contract into the project's `docs/` pointed at from above, mechanics to `--help`.
+Apply the conditional reader, purpose, and depth bars in [`surface-tests.md`](surface-tests.md) only among the surfaces the project actually has; that file also owns the no-suitable-surface outcome.
 
 Knowledge about firstmate-the-product that is useful to every firstmate user goes to firstmate's shared tracked material through the PR path; the within-repo half of that decision is owned by `firstmate-coding-guidelines`, which this skill points at and never restates.
 
-No suitable in-project home yet is a legitimate outcome, not a failure: the fact stays firstmate-side, and its continued residence there is the standing signal that the in-project home should be created through a ship task on the project's delivery path.
 Delivery is always a crew ship task; firstmate never writes a project repo.
 
 ## G6 - The hard case: relationship knowledge routes by actor
@@ -61,7 +59,7 @@ Its homes already exist and, obeying push-down, they sit low rather than up in `
 Route by the actor who needs the fact at the moment it is needed:
 
 - The main firstmate at intake or merge: standing delivery posture, ownership, and routing go to `data/projects.md`; "when to route work here" goes to the `scope:` field in `data/secondmates.md`; a bare operating fact ("myrmex rejects squash") goes to the main `data/learnings.md`.
-- The owning secondmate (apply-checkbox flow, domain conventions): that home's own `captain.md` or `learnings.md` - the whole reason dedicated secondmate homes exist.
+- The owning secondmate (apply-checkbox flow, domain conventions): that home's own `captain.md` for a home-local preference or authority, or its `learnings.md` for a home-local learned fact - the whole reason dedicated secondmate homes exist.
 - Crewmates on that project read briefs, not tiers, so the durable home must sit wherever the brief-writer reads at brief-writing time - one of the above.
   Never push a fact below the brief-writer's sight line.
 - Fat and conditional relationship lore goes to a per-project local user skill in the owning home (untracked; stow owns that offload destination's mechanics).

@@ -54,7 +54,16 @@ Falls to: a project skill (stranger-safe), or a shared tracked skill (every-firs
 Watch: the description line is the entire trigger, and a skill nothing loads is a grave.
 This tier is the idiom for firstmate-specific skills that belong to no project - untracked, excluded through the home's repository-local exclude file, harness-discovered, and zero fork divergence by construction.
 
-## project AGENTS.md / project skill
+## project-side surfaces
 
-Earns its place only if it is stranger-safe and either nearly-every-session (`AGENTS.md`) or situational (project skill).
+These tests are conditional by reader and purpose; never assume a project has the full VISION / README / CONTRIBUTING / AGENTS.md quartet.
+
+- `VISION.md` earns stranger-safe project direction.
+- `README.md` earns a stranger-safe public overview.
+- `CONTRIBUTING.md` earns stranger-safe human contributor workflow.
+- Project `AGENTS.md` earns stranger-safe agent operations needed in nearly every project session.
+- A project skill earns stranger-safe situational agent operations.
+
+Route an item only among the surfaces the project actually has, choosing by reader and purpose.
+If no suitable surface exists, the item stays firstmate-side and signals that the surface must be created through a ship task under G5.
 The write path is always a crew ship task through the project's registered delivery mode; firstmate never writes a project repo.
