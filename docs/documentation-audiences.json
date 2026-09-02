@@ -137,6 +137,22 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/careen/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/careen/references/gates.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/careen/references/kinds.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/careen/references/surface-tests.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/decision-hold-lifecycle/SKILL.md",
       "audience": "agent-runtime"
     },

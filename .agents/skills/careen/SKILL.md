@@ -44,10 +44,12 @@ The old eight-rung ladder survives only as a mnemonic; the real structure is thr
 
 ## The pass
 
-1. Sweep the lattice for durable knowledge sitting above its lowest idiomatic home: the three memory files, the charter and any secondmate homes this home owns, `config/`-oriented surfaces, this home's user skills, and - read-only - the relationship knowledge that indexes each project.
+1. Sweep only this home's own lattice and routing records for durable knowledge sitting above its lowest idiomatic home: its `captain.md`, `learnings.md`, owned `captain-shared.md`, charter, `config/`-oriented surfaces, user skills, `projects.md`, and `secondmates.md` scope.
+   Never inspect another home's lattice; package secondmate-domain knowledge found in this home's records and route it for that secondmate to self-careen.
    First runs surface far more than later ones, and by the autonomy split below they will mostly be proposals, not moves.
 2. For each durable fact, walk the gates in [`references/gates.md`](references/gates.md) to find its home.
    The routing order is KIND, then REPRESENTATION before location, then AUDIENCE to pick the side, then SCOPE and LOAD-MOMENT to pick the rung.
+   The four questions KIND -> REPRESENTATION -> AUDIENCE -> SCOPE+LOAD-MOMENT are the conceptual lattice ordering, while G1-G6 is the operational walk, with representation and secrets applied as a pre-filter ahead of durability routing.
    The kind taxonomy is [`references/kinds.md`](references/kinds.md); the bar each surface applies is [`references/surface-tests.md`](references/surface-tests.md).
 3. Decide the move's class against the autonomy split, then apply the matching write verb - or, when the destination does not yet exist, flag it.
 4. Report the pass in the completion receipt below.
@@ -99,7 +101,8 @@ Fork divergence is a standing cost the captain minimizes.
 5. No purity crusade: captain pins beat the algorithm, and re-proposing a settled placement is nagging, not curation.
 6. Prose is the representation of last resort, bounded by the enforcement scope limit above.
 7. Push-down recurses: apply the one test wherever an always-loaded surface has an on-demand basement.
-8. Reconfiguring ballast: mostly down, but hoist up in the rare case - a low fact two or more homes now need becomes a `captain-shared.md` proposal, and a local skill every firstmate user should have becomes a PR proposal.
+8. Reconfiguring ballast: mostly down, but hoist a shared captain preference or directive that two or more homes now need into a `captain-shared.md` proposal, and turn a local skill every firstmate user should have into a PR proposal.
+   General or operational facts needed by multiple homes follow their tracked owner under `secondmate-provisioning` and never enter `captain-shared.md`, preserving one owner.
 
 ## Completion receipt
 

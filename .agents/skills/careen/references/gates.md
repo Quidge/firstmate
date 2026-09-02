@@ -2,7 +2,8 @@
 
 The on-demand walk for one held fact.
 `SKILL.md` names the routing order and when to reach this file; this file is the full flowchart.
-Hold one specific fact and answer the gates top to bottom; the first gate that resolves it wins.
+Before durability routing, apply G2's representation test as a hard pre-filter so secrets always route to `.env` and no machine-owned representation can exit G1 into a prose task tier.
+For facts that remain prose, hold one specific fact and answer the gates top to bottom; the first gate that resolves it wins.
 G4's taxonomy lives in [`kinds.md`](kinds.md), and the per-surface bars G5 applies live in [`surface-tests.md`](surface-tests.md); reach each as its gate calls for it.
 
 ## G1 - Durability: does it outlive the task?
