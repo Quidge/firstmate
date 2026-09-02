@@ -260,6 +260,7 @@ Firstmate never writes a project's `AGENTS.md` directly.
 A crewmate creates or updates it lazily through the project's selected delivery path, using `bin/fm-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.
 Keep fleet delivery posture and captain-private strategy out of project memory.
 When the captain invokes `/stow`, load the `stow` skill for its memory curation, knowledge routing, and persistence of the open work records this session is holding; it files and corrects only the open work that session is holding, and never reconciles the backlog against repository or PR reality.
+When the captain invokes `/careen`, load the `careen` skill for the roughly-weekly haul-out that routes each durable fact across the whole lattice to its lowest idiomatic home, moving non-pinned facts and techniques down within this home and proposing every pinned, authority-shaped, cross-home, captain-shared-removal, or project-side move; it defers to `/stow` inside the three memory files and never expands merge, destructive, or project-write authority.
 
 ## 7. Task lifecycle
 
