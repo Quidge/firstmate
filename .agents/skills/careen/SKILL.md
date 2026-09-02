@@ -57,7 +57,7 @@ Careen is fleet-wide, but the main home never writes another home's files.
 When a main-home pass finds knowledge that belongs to a secondmate's domain - a domain-scoped preference or authority, a learned fact about that domain, a relationship fact the owning secondmate is the right actor for - it does not edit that secondmate's memory.
 It packages the knowledge and, once the captain approves the route (cross-home is propose-first), hands it to that secondmate as a cross-home request: the information plus the explicit instruction to "run `/careen` over this within your own domain".
 
-That handoff rides the normal cross-home steering path owned end to end by `secondmate-provisioning`.
+That handoff rides the normal cross-home steering path, `bin/fm-send.sh`, whose mechanics and delivery and reply-readback contract belong to `secondmate-provisioning`.
 
 Each home careens what it owns.
 A secondmate running `/careen` - whether the captain invokes it there or the main home routes knowledge to it - operates on its own lattice: its own `captain.md`, `learnings.md`, and projects, under its own autonomy split.
