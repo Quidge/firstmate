@@ -11,7 +11,7 @@ metadata:
 
 # careen
 
-Route each durable fact to the lowest surface still guaranteed-loaded for every actor that needs it: a line earns its tier only if some session that loads that tier - and nothing lower in time - needs it, so most facts push down and the rare fact that two or more homes now need is hoisted up.
+Route each durable fact to the lowest surface still guaranteed-loaded for every actor that needs it: a line earns its tier only if some session that loads that tier - and nothing lower in time - needs it, so most knowledge pushes down and only the shared captain preference or directive class in side rule 8 hoists up.
 
 ## The pass
 
