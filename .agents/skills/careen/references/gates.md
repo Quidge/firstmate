@@ -19,7 +19,7 @@ Ask, in order, whether a non-prose owner already fits:
 
 - An enforceable rule becomes a fail-closed guard, where the rule turns unviolable and no prose tier carries it - but only within the enforcement scope limit in `SKILL.md`: a `config/`-oriented, home-local destination is in scope, while anything that would change firstmate's version-controlled machinery is flagged to the captain, never performed.
 - A choice consulted at a fixed lifecycle moment belongs to the surface that moment reads: `crew-dispatch.json` at worker selection, `data/projects.md` at intake or merge, `config/*` for operating toggles.
-- The mechanics of one command belong to that script's header and `--help`, nowhere else.
+- Command mechanics follow the placement contract owned by `firstmate-coding-guidelines`.
 - A secret belongs in `.env`, only ever.
 
 Only judgment, preference, context, and lore continue past G2 as prose.

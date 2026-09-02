@@ -24,7 +24,7 @@ Every project-side or public home in this table requires G3 to pass first; a fai
 | Project-intrinsic, situational | a project's situational setup convention | a project skill |
 | Project direction / human workflow / overview | goals; contributor how-to | VISION / CONTRIBUTING / README (audience decides) |
 | Fleet-to-project relationship | "this project merges rebase-only"; a review-checklist protocol | G6 - by actor |
-| Command mechanics | exact flags, paths | `--help` / header (exits at G2) |
+| Command mechanics | a command's invocation details | `firstmate-coding-guidelines` (exits at G2) |
 | Task-scoped | one item's decisions / findings / context | backlog note to report to brief (exits at G1) |
 
 Two parallel ladders fall out once audience is fixed firstmate-only and representation is prose:

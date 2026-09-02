@@ -15,7 +15,7 @@ Route each durable fact to the lowest surface still guaranteed-loaded for every 
 
 ## The pass
 
-1. Sweep only this home's own lattice and routing records for durable knowledge sitting above its lowest idiomatic home: its `captain.md`, `learnings.md`, owned `captain-shared.md`, charter, `config/`-oriented surfaces, user skills, `projects.md`, and `secondmates.md` scope.
+1. Sweep only this home's own lattice and routing records for durable knowledge whose current placement is non-idiomatic in either direction, whether it must push down or hoist under side rule 8: its `captain.md`, `learnings.md`, owned `captain-shared.md`, charter, `config/`-oriented surfaces, user skills, `projects.md`, and `secondmates.md` scope.
    Never inspect another home's lattice; package secondmate-domain knowledge found in this home's records and route it for that secondmate to self-careen.
    A first pass surfaces far more than later ones, and by the autonomy split below it is mostly proposals, not moves.
 2. For each durable fact, walk the gates in [`references/gates.md`](references/gates.md) to find its home.
@@ -31,7 +31,7 @@ The lattice is three orthogonal axes plus a recursing depth; the old eight-rung 
 
 - SCOPE - how widely it applies: captain-wide, cross-domain, one home, one project, one task (the task rung splits by lifespan: backlog note, scout report, brief).
 - AUDIENCE - who may read it: firstmate-only, project-shareable, or public, decided by the stranger test; the project side splits by reader (VISION, README, CONTRIBUTING, AGENTS.md) but is nebulous, so never assume the full quartet.
-- REPRESENTATION - what form it takes, strongest first: enforced code, machine config, colocated mechanics (header + `--help`), prose, pointer; a secret is its own case (`.env`, only ever), and prose is the representation of last resort.
+- REPRESENTATION - what form it takes, strongest first: enforced code, machine config, colocated mechanics, prose, pointer; a secret is its own case (`.env`, only ever), prose is the representation of last resort, and `firstmate-coding-guidelines` owns mechanics placement.
 - Depth: LOAD-MOMENT, and it recurses - inside every prose surface, always-loaded versus just-in-time.
   The same earns-its-keep question repeats fractally: `captain.md` versus a skill, `AGENTS.md` versus `docs/`, a `SKILL.md` versus its `references/` (this skill is built that way on purpose).
   Keep every always-loaded surface a pointer and push depth into the basement it points at.
