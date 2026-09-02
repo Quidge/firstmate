@@ -3,6 +3,7 @@
 The taxonomy G4 routes by, each kind with an illustrative example and its home.
 A home marked "exits at G2" means the kind is owned by a machine surface, not prose; "exits at G1" means it is task-scoped.
 The relationship kind resolves at G6, and the project-side kinds resolve their depth at G5 against [`surface-tests.md`](surface-tests.md).
+Every project-side or public home in this table requires G3 to pass first; a failure routes project-relationship knowledge through G6.
 
 | Kind | Example | Home |
 |---|---|---|

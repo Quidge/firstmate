@@ -40,7 +40,8 @@ Watch: do not duplicate a rule these surfaces already own into prose.
 ## learnings.md
 
 Earns its place only if it is a home-local operational fact the home needs unprompted, recurring, with no nameable trigger.
-Falls to: the owning secondmate's own `learnings.md`, the tracked owner under `secondmate-provisioning` for a fleet-general operational or machinery fact, a local skill once a trigger is nameable, the project repo when the repo-subject smell fires, or the archive under `/stow`'s staleness rules.
+Falls to: the owning secondmate's own `learnings.md`, the tracked owner under `secondmate-provisioning` for a fleet-general operational or machinery fact, a local skill once a trigger is nameable, the project repo when G3 passes and the repo-subject smell fires, or the archive under `/stow`'s staleness rules.
+When G3 fails, route project-relationship knowledge firstmate-side through G6.
 Watch: this is where careen and stow meet - careen decides the right place, stow decides whether it is still true.
 
 ## docs/, skill references/, --help - the sub-basement
