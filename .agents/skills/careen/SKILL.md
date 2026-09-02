@@ -27,7 +27,7 @@ Route each durable fact to the lowest surface still guaranteed-loaded for every 
 
 ## The lattice
 
-The lattice is three orthogonal axes plus a recursing depth; the old eight-rung ladder is only a mnemonic.
+The lattice is three orthogonal axes plus a recursing depth.
 
 - SCOPE - how widely it applies: captain-wide, cross-domain, one home, one project, one task (the task rung splits by lifespan: backlog note, scout report, brief).
 - AUDIENCE - who may read it: firstmate-only, project-shareable, or public, decided by the stranger test; the project side splits by reader (VISION, README, CONTRIBUTING, AGENTS.md) but is nebulous, so never assume the full quartet.
